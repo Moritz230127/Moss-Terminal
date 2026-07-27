@@ -180,7 +180,7 @@ source=(
 # sha256sums[1] (kitty tarball): real, computed locally from the pinned
 #   kitty-0.48.1.tar.xz release artifact. Do not replace with SKIP.
 sha256sums=(
-  '0b47ad5cf9921e70fc3c66d63770917d37111bed53f86e739655e27a5558f543'
+  '42d51d2a11932404aea5fb471f24f17f93b7b2e89c74ca66d15bf287935d7b88'
   'aadb428e20ad678c0a7969c0a80c46f391b49addeb7fda57b06a14a4d102fb1d'
 )
 

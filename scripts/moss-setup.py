@@ -319,6 +319,12 @@ def install(prefix: Path, engine_artifacts: dict, kitty_pkg_dir: Path) -> dict:
     copy_file(engine_artifacts["moss_cli"], moss_cli_dst, mode=0o755)
 
     kitty_bin = prefix / "bin" / "kitty"
+    setup_dst = BIN_DIR / "moss-setup"
+    copy_file(Path(__file__).resolve(), setup_dst)
+    if not DRY_RUN:
+        setup_dst.chmod(0o755)
+    info(f"CLI: {setup_dst} (安装/配置向导 / installer & config wizard)")
+
     launcher_path = BIN_DIR / "moss-terminal"
     launcher_script = (
         "#!/usr/bin/env bash\n"
@@ -822,6 +828,7 @@ def create_desktop_entry(launcher_path: Path) -> Path:
 
 # ── g. summary ──
 def summary(install_info: dict, desktop_entry: Path) -> None:
+    # (post-install tip printed at the end of this function)
     step("安装完成 / installation complete (7/7)")
     info(f"安装目录 / install prefix: {install_info['prefix']}")
     info(f"kitty: {install_info['kitty_bin']}")
@@ -838,6 +845,24 @@ def summary(install_info: dict, desktop_entry: Path) -> None:
     if DRY_RUN:
         warn("这是 --dry-run 预览：没有任何命令被执行、没有任何文件被写入 / "
              "this was a --dry-run preview: no command ran and no file was written")
+    print()
+    info(SUMMARY_TIP)
+
+
+def run_configure_only(prefix: Path) -> None:
+    """--configure: delegate to the engine's built-in config TUI when
+    possible; otherwise fall back to the text wizard used at install time."""
+    moss_bin = shutil.which("moss") or (
+        str(BIN_DIR / "moss") if (BIN_DIR / "moss").exists() else None
+    )
+    if moss_bin and sys.stdin.isatty() and sys.stdout.isatty() and not DRY_RUN:
+        info("打开 TUI 配置界面 (moss config)… / opening the config TUI")
+        os.execv(moss_bin, [moss_bin, "config"])
+    info(
+        "TUI 不可用（无 TTY 或未安装 moss），使用文本向导 / TUI unavailable, "
+        "using the text wizard"
+    )
+    configure_provider(prefix)
 
 
 def main() -> None:
@@ -853,6 +878,28 @@ def main() -> None:
         "--prefix",
         default=str(Path.home() / ".local" / "share" / "moss-terminal"),
         help="安装前缀 (默认 ~/.local/share/moss-terminal) / install prefix (default: ~/.local/share/moss-terminal)",
+    )
+    parser.add_argument(
+        "--skip-provider-wizard",
+        dest="skip_provider",
+        action="store_true",
+        help=(
+            "安装时跳过 provider 配置（先装后配）；装完用 `moss-setup "
+            "--configure` 打开 TUI / install without the provider wizard, "
+            "then run `moss-setup --configure` to open the TUI"
+        ),
+    )
+    parser.add_argument(
+        "--configure",
+        action="store_true",
+        help=(
+            "跳过构建与安装，只做配置。安装好 moss 后优先打开引擎自带的 TUI "
+            "配置界面 (等价于 `moss config`)；无 TTY 或找不到 moss 时回退到"
+            "文本向导 / configuration only, skipping build+install: prefers "
+            "the engine's built-in TUI (`moss config`) when a TTY and an "
+            "installed moss binary are available, falling back to the text "
+            "wizard otherwise."
+        ),
     )
     parser.add_argument(
         "--yes",
@@ -887,13 +934,33 @@ def main() -> None:
     # Order mirrors FR-001's 7 steps: 1 detect environment -> 2-5
     # provider/key/model/confirm (configure_provider, all before anything
     # is written) -> 6 build/install -> 7 done.
+    if args.configure:
+        run_configure_only(prefix)
+        return
+
     check_dependencies()
-    configure_provider(prefix)
+    if KITTY_DIR.exists():
+        pass
+    elif not DRY_RUN:
+        raise SystemExit(
+            "kitty/ 源码树不存在。发布 tarball 不内含 kitty；请先物料化：\n"
+            "  curl -fsSLO https://github.com/kovidgoyal/kitty/releases/download/v0.48.1/kitty-0.48.1.tar.xz\n"
+            "  tar xf kitty-0.48.1.tar.xz && ./scripts/moss-apply-patches.sh kitty-0.48.1 && mv kitty-0.48.1 kitty\n"
+            "或直接使用一键脚本 install.sh（自动完成上述步骤）。/ kitty/ tree "
+            "missing; materialise it as above or use install.sh."
+        )
+    if not args.skip_provider:
+        configure_provider(prefix)
+    else:
+        info("跳过 provider 配置（--skip-provider-wizard）/ skipping provider wizard")
     engine_artifacts = build_engine()
     kitty_pkg_dir = build_kitty()
     install_info = install(prefix, engine_artifacts, kitty_pkg_dir)
     desktop_entry = create_desktop_entry(install_info["launcher"])
     summary(install_info, desktop_entry)
+
+
+SUMMARY_TIP = "随时运行 `moss-setup --configure` 打开 TUI 配置界面（切换 provider/模型/密钥）/ run `moss-setup --configure` any time to open the config TUI"
 
 
 if __name__ == "__main__":

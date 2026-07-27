@@ -47,7 +47,7 @@ pkgbase = moss-terminal
 	options = !lto
 	source = moss-terminal-0.1.0.tar.gz::https://github.com/Moritz230127/Moss-Terminal/releases/download/v0.1.0/moss-terminal-0.1.0.tar.gz
 	source = https://github.com/kovidgoyal/kitty/releases/download/v0.48.1/kitty-0.48.1.tar.xz
-	sha256sums = 0b47ad5cf9921e70fc3c66d63770917d37111bed53f86e739655e27a5558f543
+	sha256sums = 42d51d2a11932404aea5fb471f24f17f93b7b2e89c74ca66d15bf287935d7b88
 	sha256sums = aadb428e20ad678c0a7969c0a80c46f391b49addeb7fda57b06a14a4d102fb1d
 
 pkgname = moss-terminal

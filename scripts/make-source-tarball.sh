@@ -158,7 +158,7 @@ for f in ./*.md; do
     [ -f "$f" ] || continue
     base="${f#./}"
     case " ${TOPLEVEL_DOCS[*]} " in *" $base "*) continue ;; esac
-    case "$base" in *提示词.md|实施指南.md|工具规则.md|全面测试异常清单.md) continue ;; esac
+    case "$base" in *提示词.md|实施指南.md|工具规则.md|全面测试异常清单.md|install.sh) continue ;; esac
     echo "warning: top-level doc not shipped (add it to TOPLEVEL_DOCS if it should be): $base" >&2
 done
 
