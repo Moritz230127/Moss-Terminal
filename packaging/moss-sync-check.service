@@ -1,0 +1,29 @@
+# moss-sync-check.service — OPTIONAL systemd USER unit, NOT installed
+# automatically. Paired with moss-sync-check.timer.
+#
+# Runs scripts/moss-sync-kitty.sh --notify-only, which only compares the
+# kitty version the Moss Terminal tree was built against with the version
+# Arch currently ships (or the latest GitHub release) and prints/notifies if
+# they differ. It does not download, patch, build, or adopt anything --
+# see scripts/moss-sync-kitty.sh for the full pipeline and its --adopt flag.
+#
+# MOSS_REPO below points at the checkout this was written for; if you copy
+# this file to a different machine or move the checkout, edit MOSS_REPO
+# (or override it via `systemctl --user edit moss-sync-check.service`).
+#
+# To install (manual, optional):
+#   mkdir -p ~/.config/systemd/user
+#   cp packaging/moss-sync-check.service packaging/moss-sync-check.timer ~/.config/systemd/user/
+#   systemctl --user enable --now moss-sync-check.timer
+# To remove:
+#   systemctl --user disable --now moss-sync-check.timer
+#   rm ~/.config/systemd/user/moss-sync-check.{service,timer}
+
+[Unit]
+Description=Check whether the system kitty package has moved past the version Moss Terminal was built against
+
+[Service]
+Type=oneshot
+# Adjust this path if your checkout is not at this location.
+Environment=MOSS_REPO=%h/Desktop/智能体开发/moss-terminal-kitty
+ExecStart=/bin/bash -c '"$MOSS_REPO"/scripts/moss-sync-kitty.sh --notify-only'

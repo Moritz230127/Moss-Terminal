@@ -1,0 +1,293 @@
+name: CI
+
+on:
+  push:
+    branches: [main, moss-terminal]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # Pinned upstream kitty. Keep in sync with README.en.md, CONTRIBUTING.md and
+  # release.yml when the baseline moves.
+  KITTY_VERSION: "0.48.1"
+  KITTY_SHA256: "aadb428e20ad678c0a7969c0a80c46f391b49addeb7fda57b06a14a4d102fb1d"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. The Rust engine: formatting, lints, unit tests, and both build shapes.
+  # ---------------------------------------------------------------------------
+  engine:
+    name: engine (fmt / clippy / test / build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # alsa-sys is the engine's only native dependency, and only in the
+      # default (`cli`) feature set. The embedded cdylib links nothing beyond
+      # libc/libgcc/libm.
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config libasound2-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: engine
+
+      # The exact toolchain is pinned by engine/rust-toolchain.toml, which
+      # rustup honours for every cargo invocation below (the action above only
+      # guarantees that a rustup with a stable toolchain exists). Bumping that
+      # pin is a deliberate commit: bump, run `cargo fmt --all` and
+      # `cargo clippy --all-targets -- -D warnings`, commit the result together.
+      - name: cargo fmt --check
+        working-directory: engine
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy (deny warnings)
+        working-directory: engine
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: cargo test
+        working-directory: engine
+        run: cargo test
+
+      # Order matters and is part of the contract: the CLI build must come
+      # first, then the --no-default-features build re-links libmoss.so without
+      # the audio / raw-mode / process-exit machinery. Reversing them leaves an
+      # ALSA-linked cdylib that would be dlopen()ed into the terminal process.
+      - name: Build release artifacts (CLI first, then embedded cdylib)
+        working-directory: engine
+        run: |
+          cargo build --release
+          cargo build --release --no-default-features
+
+      - name: Assert the embedded cdylib links no system libraries
+        working-directory: engine
+        run: |
+          echo "--- moss (CLI) ---"
+          ldd target/release/moss
+          echo "--- libmoss.so (embedded) ---"
+          ldd target/release/libmoss.so
+          if ldd target/release/libmoss.so | grep -qE 'libasound|libpulse|libjack'; then
+            echo "::error::libmoss.so links an audio library -- the two cargo builds ran in the wrong order"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-build
+          path: |
+            engine/target/release/moss
+            engine/target/release/libmoss.so
+          if-no-files-found: error
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # 2. End-to-end suites that only need libmoss.so (no kitty, no network).
+  #    They sandbox themselves via MOSS_HOME and talk to a mock LLM on
+  #    127.0.0.1 only.
+  # ---------------------------------------------------------------------------
+  e2e:
+    name: e2e (libmoss.so, mock LLM)
+    runs-on: ubuntu-latest
+    needs: engine
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: engine-build
+          path: engine/target/release
+
+      - name: Restore the executable bit
+        run: chmod +x engine/target/release/moss engine/target/release/libmoss.so
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: tests/e2e_mock_llm.py
+        run: python3 tests/e2e_mock_llm.py
+
+      - name: tests/e2e_answer_leak.py
+        run: python3 tests/e2e_answer_leak.py
+
+  # ---------------------------------------------------------------------------
+  # 3. The patch series must still apply cleanly to the pinned upstream kitty.
+  #    Cheap, no build -- this is the guard that catches a broken rebase.
+  # ---------------------------------------------------------------------------
+  patch-series:
+    name: patch series applies to pinned kitty
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download pinned kitty ${{ env.KITTY_VERSION }}
+        run: |
+          curl -fL --retry 3 -o kitty-src.tar.xz \
+            "https://github.com/kovidgoyal/kitty/releases/download/v${KITTY_VERSION}/kitty-${KITTY_VERSION}.tar.xz"
+
+      - name: Verify sha256
+        run: |
+          echo "${KITTY_SHA256}  kitty-src.tar.xz" | sha256sum -c -
+
+      - name: Extract
+        run: tar xf kitty-src.tar.xz
+
+      - name: Dry-run the patch series (--check)
+        run: ./scripts/moss-apply-patches.sh "kitty-${KITTY_VERSION}" --check
+
+      - name: Apply the patch series for real
+        run: ./scripts/moss-apply-patches.sh "kitty-${KITTY_VERSION}"
+
+      - name: Assert the overlay files landed
+        run: |
+          set -e
+          for f in kitty/moss_hook.c kitty/moss_hook.h kitty/moss_integration.py kitty_tests/moss.py; do
+            test -f "kitty-${KITTY_VERSION}/$f" || { echo "::error::missing overlay file: $f"; exit 1; }
+          done
+
+  # ---------------------------------------------------------------------------
+  # 4. Build the patched kitty and run its test suite, including our module.
+  #
+  #    The tree is rebuilt from scratch here rather than passed through an
+  #    artifact, because artifacts do not preserve permissions or symlinks and
+  #    the kitty tree needs both.
+  #
+  #    The apt list mirrors what kitty itself needs to build on Ubuntu. kitty's
+  #    Python test suite is headless; nothing here opens a window. If a future
+  #    kitty release adds a build dependency, this job is where it shows up
+  #    first -- fix the list rather than reaching for continue-on-error.
+  # ---------------------------------------------------------------------------
+  kitty-build:
+    name: patched kitty builds and passes ./test.py
+    runs-on: ubuntu-latest
+    needs: patch-series
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch, verify and patch kitty ${{ env.KITTY_VERSION }}
+        run: |
+          set -e
+          curl -fL --retry 3 -o kitty-src.tar.xz \
+            "https://github.com/kovidgoyal/kitty/releases/download/v${KITTY_VERSION}/kitty-${KITTY_VERSION}.tar.xz"
+          echo "${KITTY_SHA256}  kitty-src.tar.xz" | sha256sum -c -
+          tar xf kitty-src.tar.xz
+          ./scripts/moss-apply-patches.sh "kitty-${KITTY_VERSION}"
+          mv "kitty-${KITTY_VERSION}" kitty-src
+
+      # setup-python must run BEFORE apt, because `make debug` links against
+      # whichever python3 is first on PATH -- that is the tool-cache
+      # interpreter, whose headers ship with it. Installing python3-dev from
+      # apt afterwards would only add unused headers for the system python.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      # libcairo2-dev provides cairo-fc.pc, which setup.py requires via a
+      # fatal pkg_config('cairo-fc', ...) call. libsimde-dev provides
+      # <simde/x86/avx2.h>, unconditionally included by kitty/simd-string-impl.h
+      # on AMD64/X86/ARM64 targets (kitty does not vendor simde).
+      - name: Install kitty build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config \
+            libcairo2-dev libsimde-dev \
+            libdbus-1-dev libegl1-mesa-dev libfontconfig-dev libgl1-mesa-dev \
+            libharfbuzz-dev liblcms2-dev libpng-dev librsync-dev libssl-dev \
+            libwayland-dev libx11-xcb-dev libxcb-xkb-dev libxcursor-dev \
+            libxi-dev libxinerama-dev libxkbcommon-dev libxkbcommon-x11-dev \
+            libxrandr-dev libxxhash-dev wayland-protocols zlib1g-dev
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: make debug
+        working-directory: kitty-src
+        run: make debug
+
+      - name: ./test.py --module moss
+        working-directory: kitty-src
+        run: ./test.py --module moss
+
+      - name: ./test.py (full kitty suite)
+        working-directory: kitty-src
+        run: ./test.py
+
+  # ---------------------------------------------------------------------------
+  # 5. Housekeeping: shell scripts parse, the source tarball builds and is
+  #    reproducible, and no secret-shaped file is tracked.
+  # ---------------------------------------------------------------------------
+  scripts:
+    name: scripts and source tarball
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: bash -n every shell script
+        run: |
+          set -e
+          for f in scripts/*.sh; do
+            bash -n "$f"
+            echo "ok: $f"
+          done
+
+      - name: shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends shellcheck
+          # --severity=error only: style/info/warning findings are reported by
+          # the second, non-gating invocation below. An error-severity finding
+          # DOES fail this job, deliberately.
+          shellcheck --severity=error scripts/*.sh
+          echo "--- informational (never gates the build) ---"
+          shellcheck --severity=style scripts/*.sh || true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Byte-compile the Python scripts and tests
+        run: python3 -m compileall -q scripts tests
+
+      - name: Build the source tarball twice and prove it is reproducible
+        run: |
+          set -e
+          A=$(./scripts/make-source-tarball.sh --output-dir /tmp/t1 --stdout-sha-only)
+          B=$(./scripts/make-source-tarball.sh --output-dir /tmp/t2 --stdout-sha-only)
+          echo "run 1: $A"
+          echo "run 2: $B"
+          if [ "$A" != "$B" ]; then
+            echo "::error::source tarball is not reproducible"
+            exit 1
+          fi
+
+      - name: The tarball must not contain the kitty tree or build output
+        run: |
+          set -e
+          T=$(ls /tmp/t1/*.tar.gz)
+          # Entries are '<prefix>/<path>'. Anchor on the first component so that
+          # the legitimate kitty-overlay/kitty/ directory is not a false hit.
+          if tar -tzf "$T" | grep -E '^[^/]+/(kitty|dist|\.sync-work|kitty\.prev)/|^[^/]+/engine/target/|__pycache__|\.(pyc|orig|rej)$|/\.env$'; then
+            echo "::error::excluded paths leaked into the source tarball"
+            exit 1
+          fi
+          tar -tzf "$T" | grep -q 'kitty-patches/01-screen-c.patch'
+          tar -tzf "$T" | grep -q 'kitty-overlay/kitty/moss_hook.c'
+          tar -tzf "$T" | grep -q 'LICENSE'
+          echo "source tarball contents look right"

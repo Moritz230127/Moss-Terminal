@@ -1,0 +1,17 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/Moritz230127/Moss-Terminal/security/advisories/new
+    about: Report privately. Never open a public issue for a security problem — see SECURITY.md.
+  - name: Question, idea, or "is this supposed to work like this?"
+    url: https://github.com/Moritz230127/Moss-Terminal/discussions
+    about: Use Discussions for usage questions and open-ended ideas rather than the issue tracker.
+  - name: Bug in kitty itself
+    url: https://github.com/kovidgoyal/kitty/issues
+    about: If it reproduces on a stock, unmodified kitty (or a MOSS_ENABLED=0 build), report it upstream — Moss Terminal is an unofficial fork.
+  - name: Documentation (Chinese)
+    url: https://github.com/Moritz230127/Moss-Terminal/blob/main/部署与使用指南.md
+    about: Installation, configuration, daily use, troubleshooting and the upgrade flow, in detail.
+  - name: Documentation (English)
+    url: https://github.com/Moritz230127/Moss-Terminal/blob/main/README.en.md
+    about: Architecture, install, configuration, usage and development commands.

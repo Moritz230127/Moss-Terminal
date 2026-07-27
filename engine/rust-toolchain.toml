@@ -1,0 +1,17 @@
+# Pin the toolchain used to check and build the engine.
+#
+# Why: `cargo fmt --all -- --check` and `cargo clippy -- -D warnings` are
+# gating steps in .github/workflows/ci.yml. Both rustfmt's default line-wrapping
+# and clippy's lint set change between stable releases, so tracking "whatever
+# stable is today" makes a green pipeline turn red without anyone touching the
+# code. This file makes the check reproducible: bump it deliberately, run
+# `cargo fmt --all` + `cargo clippy --all-targets -- -D warnings`, commit the
+# result together.
+#
+# Note: this file is a rustup feature. If you build with a distribution-packaged
+# cargo/rustc (no rustup on PATH) it is ignored and your system toolchain is
+# used — which is fine for building, but your formatting may differ from CI.
+[toolchain]
+channel = "1.97.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

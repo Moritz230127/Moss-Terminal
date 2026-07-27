@@ -1,0 +1,194 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build a release for (e.g. v0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  # Keep in sync with ci.yml, README.en.md and CONTRIBUTING.md.
+  KITTY_VERSION: "0.48.1"
+  KITTY_SHA256: "aadb428e20ad678c0a7969c0a80c46f391b49addeb7fda57b06a14a4d102fb1d"
+
+jobs:
+  release:
+    name: Build artifacts and publish the release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Resolve the version
+        id: version
+        run: |
+          set -e
+          TAG="${{ inputs.tag || github.ref_name }}"
+          VERSION="${TAG#v}"
+          case "$VERSION" in
+            [0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::tag '$TAG' is not vX.Y.Z"; exit 1 ;;
+          esac
+          echo "tag=$TAG"         >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building Moss Terminal $VERSION from tag $TAG"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config libasound2-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: engine
+
+      # Gate the release on the same checks CI runs, so a tag can never ship
+      # something that would have been red on main.
+      - name: cargo test
+        working-directory: engine
+        run: cargo test
+
+      # ORDER MATTERS: CLI first, then the embedded cdylib. See CONTRIBUTING.md.
+      - name: Build the engine (CLI, then embedded cdylib)
+        working-directory: engine
+        run: |
+          cargo build --release
+          cargo build --release --no-default-features
+
+      - name: Assert libmoss.so has no audio linkage
+        working-directory: engine
+        run: |
+          ldd target/release/libmoss.so
+          if ldd target/release/libmoss.so | grep -qE 'libasound|libpulse|libjack'; then
+            echo "::error::libmoss.so links an audio library -- builds ran in the wrong order"
+            exit 1
+          fi
+
+      - name: Verify the patch series still applies to pinned kitty
+        run: |
+          set -e
+          curl -fL --retry 3 -o kitty-src.tar.xz \
+            "https://github.com/kovidgoyal/kitty/releases/download/v${KITTY_VERSION}/kitty-${KITTY_VERSION}.tar.xz"
+          echo "${KITTY_SHA256}  kitty-src.tar.xz" | sha256sum -c -
+          tar xf kitty-src.tar.xz
+          ./scripts/moss-apply-patches.sh "kitty-${KITTY_VERSION}" --check
+          rm -rf "kitty-${KITTY_VERSION}" kitty-src.tar.xz
+
+      - name: Build the source tarball
+        id: tarball
+        run: |
+          set -e
+          # Stamp the tarball with the tagged commit's date so the checksum is
+          # reproducible from the tag alone.
+          export SOURCE_DATE_EPOCH="$(git log -1 --pretty=%ct)"
+          ./scripts/make-source-tarball.sh \
+            --version "${{ steps.version.outputs.version }}" \
+            --output-dir dist
+          echo "epoch=$SOURCE_DATE_EPOCH" >> "$GITHUB_OUTPUT"
+
+      - name: Stage the release artifacts
+        run: |
+          set -e
+          V="${{ steps.version.outputs.version }}"
+          mkdir -p release
+          cp "dist/moss-terminal-$V.tar.gz"           "release/"
+          cp engine/target/release/moss               "release/moss-$V-x86_64-linux"
+          cp engine/target/release/libmoss.so         "release/libmoss-$V-x86_64-linux.so"
+          cp LICENSE LICENSE.MIT NOTICE.md            "release/"
+          cd release
+          sha256sum ./* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Extract this version's changelog section
+        id: notes
+        run: |
+          set -e
+          V="${{ steps.version.outputs.version }}"
+
+          awk -v v="$V" '
+            $0 ~ "^## \\[" v "\\]" { p = 1; next }
+            p && /^## \[/ { exit }
+            p { print }
+          ' CHANGELOG.md > section.md
+
+          # A Release page is not served from the repository tree, so the
+          # relative links the CHANGELOG uses ([SECURITY.md](./SECURITY.md) and
+          # friends) would 404 there. Rewrite them to absolute blob URLs pinned
+          # to this tag.
+          BLOB="${{ github.server_url }}/${{ github.repository }}/blob/${{ github.ref_name }}"
+          sed -i "s|](\./|]($BLOB/|g" section.md
+
+          if [ ! -s section.md ]; then
+            echo "See [CHANGELOG.md]($BLOB/CHANGELOG.md)." > section.md
+          fi
+
+          cp section.md release-notes.md
+          cat >> release-notes.md <<EOF
+
+          ---
+
+          ### Artifacts
+
+          | File | What it is |
+          |------|------------|
+          | \`moss-terminal-$V.tar.gz\` | Source release. **Does not contain the kitty tree** — it is regenerated from \`kitty-patches/\` + \`kitty-overlay/\`. Reproducible: rebuild it with \`SOURCE_DATE_EPOCH=${{ steps.tarball.outputs.epoch }} ./scripts/make-source-tarball.sh --version $V\` and compare. |
+          | \`moss-$V-x86_64-linux\` | The \`moss\` CLI binary. Links \`libasound\`. |
+          | \`libmoss-$V-x86_64-linux.so\` | The embedded engine that kitty \`dlopen\`s. Links only libc/libgcc/libm. |
+          | \`SHA256SUMS.txt\` | Checksums for everything above. |
+
+          Binaries are built on \`ubuntu-latest\` and require that runner's glibc or
+          newer. On other distributions, build from source.
+
+          ### Building
+
+          \`\`\`bash
+          tar xf moss-terminal-$V.tar.gz && cd moss-terminal-$V
+          curl -LO https://github.com/kovidgoyal/kitty/releases/download/v${KITTY_VERSION}/kitty-${KITTY_VERSION}.tar.xz
+          echo "${KITTY_SHA256}  kitty-${KITTY_VERSION}.tar.xz" | sha256sum -c -
+          tar xf kitty-${KITTY_VERSION}.tar.xz
+          ./scripts/moss-apply-patches.sh kitty-${KITTY_VERSION} && mv kitty-${KITTY_VERSION} kitty
+          python3 scripts/moss-setup.py
+          \`\`\`
+
+          Upstream kitty baseline: **${KITTY_VERSION}**
+          (\`${KITTY_SHA256}\`).
+
+          Licensing: the release as a whole is GPL-3.0-or-later; \`engine/\` alone is
+          MIT. See \`NOTICE.md\`.
+          EOF
+          cat release-notes.md
+
+      - name: Publish the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          TAG="${{ steps.version.outputs.tag }}"
+          PRERELEASE=""
+          case "$TAG" in
+            *-alpha*|*-beta*|*-rc*) PRERELEASE="--prerelease" ;;
+          esac
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release/* --clobber
+            gh release edit "$TAG" --notes-file release-notes.md
+          else
+            # shellcheck disable=SC2086
+            gh release create "$TAG" release/* \
+              --title "Moss Terminal ${{ steps.version.outputs.version }}" \
+              --notes-file release-notes.md \
+              $PRERELEASE
+          fi

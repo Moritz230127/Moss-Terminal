@@ -1,0 +1,114 @@
+# EditorConfig — https://editorconfig.org
+#
+# Applies to the Moss Terminal sources only. The generated kitty/ tree is
+# excluded: it is upstream code and must keep upstream's own conventions.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+max_line_length = 100
+
+# ---------------------------------------------------------------------------
+# Never touch the generated kitty tree or its build output.
+# ---------------------------------------------------------------------------
+[kitty/**]
+charset = unset
+end_of_line = unset
+insert_final_newline = unset
+trim_trailing_whitespace = unset
+indent_style = unset
+indent_size = unset
+max_line_length = unset
+
+[kitty.prev/**]
+charset = unset
+end_of_line = unset
+insert_final_newline = unset
+trim_trailing_whitespace = unset
+indent_style = unset
+indent_size = unset
+max_line_length = unset
+
+# ---------------------------------------------------------------------------
+# Patches are byte-exact artifacts. An editor that strips trailing whitespace
+# or adds a final newline will silently break `patch`, because context lines
+# for blank-but-whitespace-bearing source lines are significant.
+# ---------------------------------------------------------------------------
+[*.patch]
+charset = unset
+end_of_line = lf
+insert_final_newline = unset
+trim_trailing_whitespace = false
+indent_style = unset
+indent_size = unset
+max_line_length = unset
+
+[*.diff]
+end_of_line = lf
+insert_final_newline = unset
+trim_trailing_whitespace = false
+
+# ---------------------------------------------------------------------------
+# Languages
+# ---------------------------------------------------------------------------
+[*.rs]
+indent_size = 4
+max_line_length = 100
+
+[*.{c,h}]
+indent_size = 4
+
+[*.py]
+indent_size = 4
+max_line_length = 100
+
+[*.{sh,bash}]
+indent_size = 4
+
+# kitty's shell integration files follow kitty's own style.
+[*.{zsh,fish}]
+indent_size = 4
+
+[*.go]
+indent_style = tab
+max_line_length = unset
+
+[*.{yml,yaml}]
+indent_size = 2
+
+[*.{json,jsonc}]
+indent_size = 2
+
+[*.toml]
+indent_size = 4
+
+# ---------------------------------------------------------------------------
+# Prose. Markdown uses two trailing spaces for a hard line break, so trailing
+# whitespace must survive. The Chinese docs are wide by nature — no cap.
+# ---------------------------------------------------------------------------
+[*.md]
+trim_trailing_whitespace = false
+max_line_length = off
+
+[*.rst]
+trim_trailing_whitespace = false
+max_line_length = off
+
+[LICENSE*]
+insert_final_newline = unset
+trim_trailing_whitespace = false
+max_line_length = off
+
+# systemd units and pacman hooks are INI-shaped.
+[*.{service,timer,hook,desktop}]
+indent_size = 4
+trim_trailing_whitespace = true
+
+[Makefile]
+indent_style = tab

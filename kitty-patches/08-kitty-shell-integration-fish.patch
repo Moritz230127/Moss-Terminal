@@ -1,0 +1,33 @@
+--- a/shell-integration/fish/vendor_conf.d/kitty-shell-integration.fish
++++ b/shell-integration/fish/vendor_conf.d/kitty-shell-integration.fish
+@@ -272,3 +272,30 @@
+     set --prepend data "shell=fish" "pid=$fish_pid" "cwd=$b64_cwd" "env=$b64_envs"
+     __ksi_transmit_data (string join "," -- $data) "clone"
+ end
++
++# Moss Terminal: intercept 》-prefixed input and route it to the embedded AI
++# engine instead of the shell. Active only inside Moss Terminal.
++if status is-interactive; and set -q MOSS_TERMINAL
++    function __moss_ask
++        set -l b64 (printf '%s' $argv[1] | base64 | string join '')
++        printf '\e]7717;ask;%s\a' $b64
++        # Block silently until the terminal signals stream end with a
++        # newline; an interrupted read (Ctrl+C) cancels the request.
++        if not read -s -P '' __moss_done
++            printf '\e]7717;cancel\a'
++        end
++    end
++    function __moss_enter
++        set -l buf (commandline)
++        if string match -q '》*' -- $buf
++            printf '\n'
++            __moss_ask $buf
++            commandline ''
++            commandline -f repaint
++        else
++            commandline -f execute
++        end
++    end
++    bind \r __moss_enter
++    bind -M insert \r __moss_enter 2>/dev/null
++end

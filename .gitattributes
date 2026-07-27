@@ -1,0 +1,96 @@
+# Git attributes for Moss Terminal.
+#
+# The single most important rule here is the patch series: kitty-patches/*.patch
+# are byte-exact artifacts consumed by `patch -p1`. If git ever normalises their
+# line endings, or a diff/merge driver rewrites them, `scripts/moss-apply-patches.sh`
+# starts failing with hunk offsets that make no sense. They are therefore marked
+# binary-ish (-text) with an explicit LF working-tree encoding.
+
+# ---------------------------------------------------------------------------
+# Default: let git detect text, and normalise to LF in the repository.
+# ---------------------------------------------------------------------------
+* text=auto eol=lf
+
+# ---------------------------------------------------------------------------
+# The patch series — never touch these.
+# ---------------------------------------------------------------------------
+*.patch    -text eol=lf -diff -merge linguist-generated=false
+*.diff     -text eol=lf -diff -merge
+
+# ---------------------------------------------------------------------------
+# Source: explicit LF, and everything is text.
+# ---------------------------------------------------------------------------
+*.rs       text eol=lf diff=rust
+*.c        text eol=lf diff=cpp
+*.h        text eol=lf diff=cpp
+*.py       text eol=lf diff=python
+*.go       text eol=lf diff=golang
+*.sh       text eol=lf
+*.bash     text eol=lf
+*.zsh      text eol=lf
+*.fish     text eol=lf
+*.toml     text eol=lf
+*.json     text eol=lf
+*.jsonc    text eol=lf
+*.yml      text eol=lf
+*.yaml     text eol=lf
+*.rst      text eol=lf
+*.desktop  text eol=lf
+*.hook     text eol=lf
+*.service  text eol=lf
+*.timer    text eol=lf
+Makefile   text eol=lf
+.editorconfig  text eol=lf
+.gitattributes text eol=lf
+.gitignore     text eol=lf
+
+# ---------------------------------------------------------------------------
+# Documentation. The Chinese docs are UTF-8 text — mark them explicitly so no
+# heuristic ever mistakes a CJK-dense file for binary, and so `git diff` and
+# GitHub render them as prose. (Filenames are themselves CJK; git matches them
+# byte-wise, so these patterns work as written.)
+# ---------------------------------------------------------------------------
+*.md              text eol=lf diff=markdown
+README.md         text eol=lf diff=markdown
+README.en.md      text eol=lf diff=markdown
+部署与使用指南.md    text eol=lf diff=markdown
+项目概要.md         text eol=lf diff=markdown
+文件清单.md         text eol=lf diff=markdown
+验收报告.md         text eol=lf diff=markdown
+specs/需求规格.md    text eol=lf diff=markdown
+
+LICENSE      text eol=lf
+LICENSE.MIT  text eol=lf
+NOTICE.md    text eol=lf diff=markdown
+
+# ---------------------------------------------------------------------------
+# Binary assets: never diffed, never normalised.
+# ---------------------------------------------------------------------------
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.webp      binary
+*.ico       binary
+*.wav       binary
+*.mp3       binary
+*.so        binary
+*.a         binary
+*.tar.gz    binary
+*.tar.xz    binary
+*.tiktoken  binary
+
+# ---------------------------------------------------------------------------
+# Keep generated / vendored trees out of language statistics and PR diffs.
+# ---------------------------------------------------------------------------
+kitty/**        linguist-vendored
+kitty.prev/**   linguist-vendored
+engine/Cargo.lock  linguist-generated -diff
+
+# ---------------------------------------------------------------------------
+# Never ship these in a `git archive` tarball. (The canonical source tarball is
+# produced by scripts/make-source-tarball.sh, but keep `git archive` sane too.)
+# ---------------------------------------------------------------------------
+kitty/          export-ignore
+kitty.prev/     export-ignore
+.sync-work/     export-ignore

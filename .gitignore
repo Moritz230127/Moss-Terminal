@@ -1,0 +1,81 @@
+# Rust build artifacts
+engine/target/
+
+# ---------------------------------------------------------------------------
+# The kitty source tree is NOT part of this repository.
+#
+# It is 100% regenerable from kitty-patches/ + kitty-overlay/ applied to the
+# pinned upstream tarball (see README.en.md), so vendoring 220 MB of it here
+# would only create a second, drifting copy of upstream. Materialise it with:
+#
+#     ./scripts/moss-apply-patches.sh /path/to/kitty-X.Y.Z && mv ... ./kitty
+#
+# Note the leading slashes: these anchor to the repository root so that
+# kitty-overlay/kitty/ (which IS tracked) is not swept up too.
+# ---------------------------------------------------------------------------
+/kitty/
+/kitty.prev/
+/kitty-pristine/
+/kitty-*.tar.xz
+/kitty-*.tar.gz
+
+# Source-tarball output (scripts/make-source-tarball.sh)
+/dist/
+
+# kitty build artifacts — kept for anyone who has an older checkout in which
+# kitty/ is still tracked; redundant once /kitty/ above applies.
+kitty/build/
+kitty/linux-package/
+kitty/kitty/launcher/kitty
+kitty/kitty/launcher/kitten
+kitty/**/*.so
+kitty/**/*_generated.go
+kitty/**/*_generated.h
+kitty/**/*_generated.s
+kitty/**/*_generated.bin
+kitty/glfw/wayland-*-protocol.c
+kitty/glfw/wayland-*-protocol.h
+kitty/fonts/
+kitty/docs/generated/
+kitty/compile_commands.json
+kitty/link_commands.json
+kitty/*.log
+
+# sync workdir and previous tree kept by moss-sync-kitty.sh --adopt
+.sync-work/
+kitty.prev/
+
+# Python
+__pycache__/
+*.pyc
+
+# secrets must never enter the repo
+.env
+.env.*
+!.env.example
+kitty/.moss-patched
+.moss-patched
+*.orig
+*.rej
+
+# ---------------------------------------------------------------------------
+# Internal development scaffolding (agent prompts, ad-hoc test logs). These are
+# notes to the people building this project, not product documentation, and
+# scripts/make-source-tarball.sh already keeps them out of release tarballs.
+#
+# The 14 that predate this rule are ALREADY TRACKED, so ignoring them here has
+# no effect until they are untracked. To drop them from the public repo:
+#     git rm --cached -- *提示词.md 实施指南.md 工具规则.md 全面测试异常清单.md
+# (that keeps your local copies; only the index entry goes away).
+# ---------------------------------------------------------------------------
+/*提示词.md
+/实施指南.md
+/工具规则.md
+/全面测试异常清单.md
+
+# editors / OS
+*.swp
+*~
+.DS_Store
+.idea/
+.vscode/

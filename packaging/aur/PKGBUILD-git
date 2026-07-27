@@ -1,0 +1,267 @@
+# Maintainer: OWNER <you@example.com>
+#
+# Moss Terminal — VCS variant. Tracks the moss-terminal branch instead of a
+# tagged release. Same build and same install layout as the release package;
+# only the source, the version and the provides/conflicts differ.
+#
+# To use this file, copy it into its own directory as `PKGBUILD` and generate
+# its own .SRCINFO there (the AUR repo for moss-terminal-git needs the file
+# committed; it is NOT interchangeable with the release package's):
+#   mkdir moss-terminal-git && cp PKGBUILD-git moss-terminal-git/PKGBUILD \
+#     && cp moss-terminal.install moss-terminal-git/
+#   cd moss-terminal-git && makepkg --printsrcinfo > .SRCINFO
+# (The .install file is shared verbatim; only the install= line's name below
+# refers to it.)
+#
+# Substitute both placeholders before publishing. moss-terminal.install
+# contains neither, so it is deliberately not in the list:
+#   sed -i -e 's|OWNER|your-github-user|g' \
+#          -e 's|you@example\.com|you@your.domain|g' \
+#          PKGBUILD .SRCINFO
+# Verify with: grep -rn 'OWNER\|you@example\.com' .
+
+pkgname=moss-terminal-git
+_pkgname=moss-terminal
+# Placeholder; pkgver() replaces it at build time. Keep a parseable value so
+# `makepkg --printsrcinfo` works before the first checkout.
+pkgver=0.1.0.r0.g0000000
+pkgrel=1
+
+# The upstream kitty release the patch series in the tracked branch applies
+# to. This is NOT auto-detected: the branch pins its patches to one exact
+# kitty version, and _kittyver + sha256sums[1] must be bumped together
+# whenever the branch regenerates the series against a newer kitty. If the
+# branch has moved on, prepare() will fail loudly with a patch conflict
+# rather than build a kitty without the AI hook.
+_kittyver=0.48.1
+_branch=moss-terminal
+
+pkgdesc="AI-native terminal built on kitty: ask by typing 》 at the prompt (git version)"
+arch=('x86_64' 'aarch64')
+url="https://github.com/Moritz230127/Moss-Terminal"
+# SPDX identifiers — see the release PKGBUILD.
+license=('GPL-3.0-only' 'MIT')
+# !lto: libsqlite3-sys/onig_sys compile C with $CFLAGS; makepkg's -flto=auto
+# produces GCC LTO objects that rustc's default lld linker cannot read
+# (undefined sqlite3_* at link). Standard fix for Rust+bundled-C packages.
+options=(!lto)
+
+provides=("${_pkgname}=${pkgver}")
+conflicts=("${_pkgname}")
+
+# Identical to the release package — see PKGBUILD for the justification of
+# each entry (notably: kitty-shell-integration removed because we ship our
+# own patched copy, alsa-lib added because the moss CLI links libasound).
+depends=(
+  'cairo'
+  'dbus'
+  'freetype2'
+  'fontconfig'
+  'harfbuzz'
+  'hicolor-icon-theme'
+  'lcms2'
+  'libgl'
+  'libpng'
+  'librsync'
+  'libx11'
+  'libxcursor'
+  'libxkbcommon'
+  'libxkbcommon-x11'
+  'libxi'
+  'openssl'
+  'python3'
+  'wayland'
+  'xxhash'
+  'zlib'
+  'kitty-terminfo'
+  'alsa-lib'
+)
+
+makedepends=(
+  'git'                 # extra vs. the release package: VCS source
+  'rust'
+  'go'
+  'python'
+  'pkgconf'
+  'wayland-protocols'
+  'libxrandr'
+  'libxinerama'
+  'simde'
+  'patch'
+)
+
+# Identical to the release package — `kitten` is not on PATH, see PKGBUILD.
+optdepends=(
+  'imagemagick: viewing images with icat (run /usr/lib/moss-terminal/bin/kitten icat)'
+  'python-pygments: syntax highlighting in kitten diff'
+  'libcanberra: playing "bell" sound on terminal bell'
+  'zsh: full-fidelity 》 input (recommended over bash, see the post-install note)'
+  'fish: full-fidelity 》 input (recommended over bash, see the post-install note)'
+)
+
+install="${_pkgname}.install"
+
+source=(
+  "${_pkgname}::git+${url}.git#branch=${_branch}"
+  "https://github.com/kovidgoyal/kitty/releases/download/v${_kittyver}/kitty-${_kittyver}.tar.xz"
+)
+# SKIP on a VCS source is correct and expected (the ref is the identity).
+# The kitty tarball keeps its real digest — never SKIP that one.
+sha256sums=(
+  'SKIP'
+  'aadb428e20ad678c0a7969c0a80c46f391b49addeb7fda57b06a14a4d102fb1d'
+)
+
+_projsrc="${_pkgname}"
+_kittysrc="kitty-${_kittyver}"
+_prefix=/usr/lib/moss-terminal
+
+pkgver() {
+  cd "${srcdir}/${_projsrc}"
+  # The repository currently has NO tags, so the `git describe` branch below
+  # will not fire yet and the rev-list fallback is what actually runs. Both
+  # forms are monotonically increasing, and moving from the fallback to a
+  # real tag later still compares greater (0.1.0.rN < <tag>.rM once tagged
+  # above 0.1.0), so upgrades keep working.
+  if git describe --long --tags >/dev/null 2>&1; then
+    git describe --long --tags --abbrev=7 |
+      sed 's/^v//; s/\([^-]*-g\)/r\1/; s/-/./g'
+  else
+    printf '0.1.0.r%s.g%s' \
+      "$(git rev-list --count HEAD)" \
+      "$(git rev-parse --short=7 HEAD)"
+  fi
+}
+
+prepare() {
+  "${srcdir}/${_projsrc}/scripts/moss-apply-patches.sh" "${srcdir}/${_kittysrc}"
+
+  export RUSTUP_TOOLCHAIN=stable
+  cd "${srcdir}/${_projsrc}/engine"
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+
+  cd "${srcdir}/${_kittysrc}"
+  export GOPATH="${srcdir}/gopath"
+  export GOMODCACHE="${srcdir}/gopath/pkg/mod"
+  # -modcacherw is required in prepare(), not just build(): go extracts modules
+  # mode 0555 and `rm -rf` cannot delete a read-only dir, so `makepkg -c` and
+  # AUR helpers would fail to clean $srcdir. See the release PKGBUILD.
+  export GOFLAGS="-trimpath -mod=readonly -modcacherw"
+  go mod download
+}
+
+build() {
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR="${srcdir}/cargo-target"
+
+  cd "${srcdir}/${_projsrc}/engine"
+  # ORDER IS LOAD-BEARING — see the long comment in the release PKGBUILD.
+  # (1) leaves the `moss` CLI binary; (2) overwrites libmoss.so with the
+  # embed-safe, no-ALSA, no-TTY variant that gets dlopen()ed into kitty.
+  cargo build --frozen --release
+  cargo build --frozen --release --no-default-features
+
+  # Staged immediately so check()'s `cargo test --release` (default features)
+  # cannot rewrite libmoss.so behind package()'s back.
+  install -d "${srcdir}/moss-staging"
+  install -m755 "${CARGO_TARGET_DIR}/release/moss"       "${srcdir}/moss-staging/moss"
+  install -m755 "${CARGO_TARGET_DIR}/release/libmoss.so" "${srcdir}/moss-staging/libmoss.so"
+
+  cd "${srcdir}/${_kittysrc}"
+  export GOPATH="${srcdir}/gopath"
+  export GOMODCACHE="${srcdir}/gopath/pkg/mod"
+  export GOFLAGS="-trimpath -mod=readonly -modcacherw"
+
+  # linux-package is relocatable: the launcher gets a relative
+  # -DKITTY_LIB_PATH="../lib/kitty" resolved against realpath(/proc/self/exe).
+  python setup.py linux-package \
+    --prefix="${srcdir}/linux-package" \
+    --libdir-name=lib \
+    --update-check-interval=0 \
+    --shell-integration=enabled \
+    --ignore-compiler-warnings \
+    --verbose
+}
+
+check() {
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR="${srcdir}/cargo-target"
+  cd "${srcdir}/${_projsrc}/engine"
+  export MOSS_HOME="${srcdir}/moss-test-home"
+  install -d "${MOSS_HOME}"
+  cargo test --frozen --release
+  # kitty's ./test.py needs a TTY and a display; not runnable under makepkg.
+  # See the release PKGBUILD for the full rationale.
+}
+
+package() {
+  install -d "${pkgdir}${_prefix}"
+  cp -a "${srcdir}/linux-package/." "${pkgdir}${_prefix}/"
+  rm -rf "${pkgdir}${_prefix}/share/applications"
+  # kitty's prebuilt HTML docs (~25 MB, duplicated from the kitty package).
+  rm -rf "${pkgdir}${_prefix}/share/doc/kitty/html"
+
+  # libmoss.so MUST live next to the kitty package, at <prefix>/lib/kitty/ —
+  # the only path moss_integration.py's own fallback resolves without
+  # MOSS_ENGINE_LIB. (moss_hook.c still needs the env var; see the release
+  # PKGBUILD for the full story.) Anywhere else and the engine is unreachable
+  # for any launch that bypasses the /usr/bin wrapper.
+  install -Dm755 "${srcdir}/moss-staging/libmoss.so" \
+    "${pkgdir}${_prefix}/lib/kitty/libmoss.so"
+  install -Dm755 "${srcdir}/moss-staging/moss" "${pkgdir}/usr/bin/moss"
+
+  # MOSS_ENGINE_LIB below is belt-and-braces and MUST name the same file as the
+  # install above, or the C hook and the Python side can load two objects.
+  install -d "${pkgdir}/usr/bin"
+  cat > "${pkgdir}/usr/bin/${_pkgname}" <<EOF
+#!/bin/sh
+# Moss Terminal launcher (installed by the ${pkgname} package)
+MOSS_PREFIX=${_prefix}
+export MOSS_ENGINE_LIB="\${MOSS_ENGINE_LIB:-\$MOSS_PREFIX/lib/kitty/libmoss.so}"
+exec "\$MOSS_PREFIX/bin/kitty" "\$@"
+EOF
+  chmod 755 "${pkgdir}/usr/bin/${_pkgname}"
+
+  install -Dm644 "${srcdir}/${_projsrc}/scripts/${_pkgname}.desktop" \
+    "${pkgdir}/usr/share/applications/${_pkgname}.desktop"
+  sed -i \
+    -e "s|^TryExec=.*|TryExec=/usr/bin/${_pkgname}|" \
+    -e "s|^Exec=.*|Exec=/usr/bin/${_pkgname}|" \
+    -e "s|^Icon=.*|Icon=${_pkgname}|" \
+    "${pkgdir}/usr/share/applications/${_pkgname}.desktop"
+
+  # kitty's artwork under our own filename (no collision with the kitty pkg).
+  install -Dm644 "${srcdir}/${_kittysrc}/logo/kitty.png" \
+    "${pkgdir}/usr/share/icons/hicolor/256x256/apps/${_pkgname}.png"
+  install -Dm644 "${srcdir}/${_kittysrc}/logo/kitty.svg" \
+    "${pkgdir}/usr/share/icons/hicolor/scalable/apps/${_pkgname}.svg"
+
+  install -Dm644 "${srcdir}/${_kittysrc}/LICENSE" \
+    "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE.kitty-GPL3"
+  install -Dm644 "${srcdir}/${_projsrc}/engine/LICENSE" \
+    "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE.engine-MIT"
+  if [ -f "${srcdir}/${_projsrc}/LICENSE" ]; then
+    install -Dm644 "${srcdir}/${_projsrc}/LICENSE" \
+      "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+  fi
+
+  install -d "${pkgdir}/usr/share/doc/${_pkgname}"
+  local _doc
+  for _doc in README.md 部署与使用指南.md 项目概要.md 文件清单.md 验收报告.md; do
+    if [ -f "${srcdir}/${_projsrc}/${_doc}" ]; then
+      install -m644 "${srcdir}/${_projsrc}/${_doc}" "${pkgdir}/usr/share/doc/${_pkgname}/${_doc}"
+    fi
+  done
+  if [ -f "${srcdir}/${_projsrc}/specs/需求规格.md" ]; then
+    install -Dm644 "${srcdir}/${_projsrc}/specs/需求规格.md" \
+      "${pkgdir}/usr/share/doc/${_pkgname}/specs/需求规格.md"
+  fi
+
+  install -d "${pkgdir}/usr/share/${_pkgname}/packaging"
+  install -m644 \
+    "${srcdir}/${_projsrc}/packaging/moss-kitty-sync.hook" \
+    "${srcdir}/${_projsrc}/packaging/moss-sync-check.service" \
+    "${srcdir}/${_projsrc}/packaging/moss-sync-check.timer" \
+    "${srcdir}/${_projsrc}/packaging/README.md" \
+    "${pkgdir}/usr/share/${_pkgname}/packaging/"
+}

@@ -1,0 +1,456 @@
+# Maintainer: OWNER <you@example.com>
+# Contributor: OWNER <you@example.com>
+#
+# Moss Terminal — a kitty fork with an embedded Rust AI engine (libmoss.so)
+# dlopen()ed into the kitty process. Typing 》question at the shell prompt
+# triggers it. No daemon, no socket, no subprocess.
+#
+# ---------------------------------------------------------------------------
+# BEFORE YOU PUBLISH THIS: four placeholders must be substituted.
+#
+#   1. OWNER      -> your GitHub account/org.
+#   2. you@example.com -> your maintainer e-mail (Maintainer/Contributor lines).
+#                    Both, in one go — note moss-terminal.install contains
+#                    neither placeholder, so it is not in the list:
+#                      sed -i -e 's|OWNER|your-github-user|g' \
+#                             -e 's|you@example\.com|you@your.domain|g' \
+#                             PKGBUILD PKGBUILD-git README.md .SRCINFO
+#                    Verify with: grep -rn 'OWNER\|you@example\.com' .
+#   3. pkgver     -> the git tag you actually release. The upstream project
+#                    has NO tags yet, so 0.1.0 below is a first-release
+#                    placeholder; pkgver MUST equal the tag (v$pkgver) that
+#                    the source= URL points at.
+#   4. sha256sums[0] -> see the comment on the sha256sums array.
+#
+# Note on versions: the Rust crate in engine/Cargo.toml is 0.2.1 (inherited
+# from its own upstream project). That is deliberately NOT the package
+# version — do not "sync" them.
+# ---------------------------------------------------------------------------
+
+pkgname=moss-terminal
+pkgver=0.1.0
+pkgrel=1
+
+# The exact upstream kitty release this patch series is generated against.
+# The 10 patches in kitty-patches/ apply with zero fuzz to this version and
+# ONLY this version; bumping it requires regenerating the series (see
+# scripts/moss-sync-kitty.sh). Keep _kittyver and sha256sums[1] in lockstep.
+_kittyver=0.48.1
+
+pkgdesc="AI-native terminal built on kitty: ask by typing 》 at the prompt, answers stream into the terminal itself"
+arch=('x86_64' 'aarch64')
+url="https://github.com/Moritz230127/Moss-Terminal"
+# SPDX identifiers (the old 'GPL3'/'custom' style is deprecated and namcap
+# warns on it; Arch's own kitty package declares GPL-3.0-only).
+# GPL-3.0-only: the shipped work is a kitty derivative, so the combined binary
+# package is GPLv3. MIT: the Rust engine under engine/ is MIT and ships here too.
+license=('GPL-3.0-only' 'MIT')
+# !lto: libsqlite3-sys/onig_sys compile C with $CFLAGS; makepkg's -flto=auto
+# produces GCC LTO objects that rustc's default lld linker cannot read
+# (undefined sqlite3_* at link). Standard fix for Rust+bundled-C packages.
+options=(!lto)
+
+# --- Runtime dependencies -------------------------------------------------
+# Baseline = the Arch `kitty` package's Depends On, because we ship a patched
+# build of exactly that source. Two deliberate deltas:
+#
+#   REMOVED  kitty-shell-integration
+#            Arch builds kitty with --shell-integration='enabled no-rc' and
+#            ships the scripts separately in that package. We do NOT: patches
+#            07/08/09 modify kitty's own bundled shell-integration — 07 is the
+#            zsh accept-line hook (07-kitty-integration.patch, against
+#            shell-integration/zsh/kitty-integration, i.e. the shell we
+#            actually recommend), 08 the fish \r binding, 09 the bash
+#            command_not_found_handle — all three intercept 》,
+#            and we build with the upstream default shell_integration=enabled
+#            so kitty injects OUR patched copy from
+#            /usr/lib/moss-terminal/lib/kitty/shell-integration/. Depending on
+#            Arch's package would pull in an unpatched copy that cannot
+#            trigger 》 at all.
+#
+#   ADDED    alsa-lib
+#            The `moss` CLI binary (built with default features) links
+#            libasound via the rodio crate for the alarm/timer tool.
+#            Verified: `ldd /usr/bin/moss` -> libasound.so.2. The embedded
+#            libmoss.so is built --no-default-features and needs only
+#            libc/libgcc/libm, but the CLI is in this same package, so the
+#            dependency is real.
+#
+# kitty-terminfo is kept: Moss Terminal sets TERM=xterm-kitty just like kitty
+# does, and we do NOT ship our own /usr/share/terminfo entry (that would
+# collide with the kitty-terminfo package file-for-file).
+#
+# 'python3' is deliberately unversioned, but note the consequence: the payload
+# hard-links against the libpython of the build machine (verified: kitty's
+# fast_data_types.so -> libpython3.14.so.1.0). Arch rebuilds its own kitty on
+# every python minor bump; an AUR package gets no such rebuild, so after the
+# next python migration users must REBUILD this package or Moss Terminal dies
+# with "libpython3.X.so.1.0: cannot open shared object file". Called out in
+# README.md and moss-terminal.install too.
+depends=(
+  'cairo'
+  'dbus'
+  'freetype2'
+  'fontconfig'
+  'harfbuzz'
+  'hicolor-icon-theme'
+  'lcms2'
+  'libgl'
+  'libpng'
+  'librsync'
+  'libx11'
+  'libxcursor'
+  'libxkbcommon'
+  'libxkbcommon-x11'
+  'libxi'
+  'openssl'
+  'python3'
+  'wayland'
+  'xxhash'
+  'zlib'
+  'kitty-terminfo'
+  'alsa-lib'
+)
+
+makedepends=(
+  'rust'                # cargo + rustc for the engine (both builds)
+  'go'                  # kitty's `kitten` binary and its generated Go files
+  'python'              # kitty's setup.py driver
+  'pkgconf'             # setup.py probes every C dep via pkg-config
+  'wayland-protocols'   # XML protocol definitions, scanned at build time
+  'libxrandr'           # X11 backend build headers
+  'libxinerama'         # X11 backend build headers
+  'simde'               # optional SIMD headers; setup.py probes it with
+                        # fatal=False, but Arch's own kitty build uses it and
+                        # it measurably helps the SIMD paths. Safe to drop.
+  'patch'               # scripts/moss-apply-patches.sh drives patch(1)
+)
+# NOT a makedepend: any sphinx package. kitty's *release tarball* ships
+# prebuilt docs (docs/_build/man and docs/_build/html), so setup.py's
+# copy_man_pages()/copy_html_docs() never shell out to `make docs`.
+# Verified against kitty-${_kittyver}.tar.xz: 70 man entries, 291 html entries.
+
+# The first three are the stock kitty package's optdepends verbatim — they
+# apply unchanged to our payload. Note that `kitten` is NOT on PATH inside a
+# Moss Terminal window (kitty does not add its bin dir to PATH on Linux and we
+# deliberately do not install /usr/bin/kitten, which belongs to the kitty
+# package), so it has to be invoked as /usr/lib/moss-terminal/bin/kitten.
+optdepends=(
+  'imagemagick: viewing images with icat (run /usr/lib/moss-terminal/bin/kitten icat)'
+  'python-pygments: syntax highlighting in kitten diff'
+  'libcanberra: playing "bell" sound on terminal bell'
+  'zsh: full-fidelity 》 input (recommended over bash, see the post-install note)'
+  'fish: full-fidelity 》 input (recommended over bash, see the post-install note)'
+)
+
+install="${pkgname}.install"
+
+# source[0] is the project's OWN release asset, not GitHub's auto-generated
+# tag archive (${url}/archive/refs/tags/...). Deliberate:
+#   * .github/workflows/release.yml builds it with scripts/make-source-tarball.sh
+#     — SOURCE_DATE_EPOCH-stamped, ownership forced to 0:0, LC_ALL=C-sorted file
+#     list, GNU tar format, gzip -n — i.e. documented byte-reproducible, so the
+#     digest below can be trusted and re-derived from the tag alone.
+#   * GitHub's auto archives are NOT byte-stable (their gzip layer has changed
+#     before and mass-invalidated AUR checksums).
+#   * make-source-tarball.sh drops engine/pics/ (13 MB of unreferenced
+#     screenshots) and the 220 MB regenerable kitty/ tree; the auto archive
+#     would ship the former.
+# The extracted top-level directory is the same either way
+# (make-source-tarball.sh: PREFIX="$NAME-$VERSION" = moss-terminal-${pkgver}),
+# so _projsrc below needs no change.
+source=(
+  "${pkgname}-${pkgver}.tar.gz::${url}/releases/download/v${pkgver}/${pkgname}-${pkgver}.tar.gz"
+  "https://github.com/kovidgoyal/kitty/releases/download/v${_kittyver}/kitty-${_kittyver}.tar.xz"
+)
+
+# sha256sums[0] (project tarball): SKIP.
+#   Unavoidable at authoring time — the upstream repo has no git remote and no
+#   tags yet, so the release asset this URL names does not exist and cannot be
+#   hashed. This is a real integrity gap and MUST be closed before AUR
+#   submission. Take the digest from the SHA256SUMS.txt that the same release
+#   workflow uploads next to the tarball (authoritative, and it lets you verify
+#   what you downloaded independently) rather than from updpkgsums:
+#       curl -sL ${url}/releases/download/v${pkgver}/SHA256SUMS.txt \
+#         | awk -v f="./${pkgname}-${pkgver}.tar.gz" '$2==f{print $1}'
+#   then paste it below and run `makepkg --printsrcinfo > .SRCINFO`.
+#   (`updpkgsums` also works — it just re-downloads and hashes — but it cannot
+#   cross-check against what upstream published.) Do not submit with SKIP.
+#
+# sha256sums[1] (kitty tarball): real, computed locally from the pinned
+#   kitty-0.48.1.tar.xz release artifact. Do not replace with SKIP.
+sha256sums=(
+  '0b47ad5cf9921e70fc3c66d63770917d37111bed53f86e739655e27a5558f543'
+  'aadb428e20ad678c0a7969c0a80c46f391b49addeb7fda57b06a14a4d102fb1d'
+)
+
+# Where the project tarball unpacks to. make-source-tarball.sh sets
+# PREFIX="$NAME-$VERSION"; this also happens to be what GitHub's auto archive
+# would produce, so the value is correct for either source.
+_projsrc="${pkgname}-${pkgver}"
+# Where the patched kitty tree lives
+_kittysrc="kitty-${_kittyver}"
+# Install prefix for the whole payload. Chosen so that NOTHING collides with
+# the stock `kitty` package, which owns /usr/lib/kitty, /usr/bin/kitty and
+# /usr/bin/kitten. Verified against `pacman -Ql kitty`.
+_prefix=/usr/lib/moss-terminal
+
+prepare() {
+  # 1. Turn the pristine kitty tree into a Moss Terminal tree.
+  #    scripts/moss-apply-patches.sh applies the 10-patch series and copies
+  #    the 4 overlay files (moss_hook.c/.h, moss_integration.py, the test
+  #    module). It exits 2 on any conflict, which fails the build loudly
+  #    rather than silently producing a kitty without the AI hook.
+  "${srcdir}/${_projsrc}/scripts/moss-apply-patches.sh" "${srcdir}/${_kittysrc}"
+
+  # 2. Offline-prep the Rust dependency graph (Arch Rust packaging guideline).
+  #    This is the only network access in the build and it is bounded by
+  #    engine/Cargo.lock: `--locked` refuses to resolve anything the lockfile
+  #    does not already pin, and every crate is checksummed by the lockfile.
+  #    build() and check() then run with --frozen (= --locked --offline).
+  export RUSTUP_TOOLCHAIN=stable
+  cd "${srcdir}/${_projsrc}/engine"
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+
+  # 3. Same idea for Go: kitty's `kitten` is a Go program and its release
+  #    tarball does NOT vendor its modules (verified: no vendor/ in the
+  #    tarball). Download them now, pinned and checksummed by kitty's own
+  #    go.sum, so build() can run with -mod=readonly and no resolution.
+  cd "${srcdir}/${_kittysrc}"
+  export GOPATH="${srcdir}/gopath"
+  export GOMODCACHE="${srcdir}/gopath/pkg/mod"
+  # -modcacherw MUST be set HERE, not just in build(): go extracts module trees
+  # mode 0555, and `rm -rf` cannot remove a read-only directory. Without it,
+  # `makepkg -c`, a manual `rm -rf src/`, and every AUR helper that cleans the
+  # build dir fail with "Permission denied" after a successful build. Setting
+  # it in build() is too late — it only governs what go writes from then on.
+  export GOFLAGS="-trimpath -mod=readonly -modcacherw"
+  go mod download
+}
+
+build() {
+  export RUSTUP_TOOLCHAIN=stable
+  # One shared target dir, outside the source trees, so check() and build()
+  # agree on where artifacts live.
+  export CARGO_TARGET_DIR="${srcdir}/cargo-target"
+
+  cd "${srcdir}/${_projsrc}/engine"
+
+  # ---- THE ENGINE IS BUILT TWICE AND THE ORDER IS LOAD-BEARING ----
+  # Both invocations write into the same target/release/ directory.
+  #
+  #   (1) default features ("cli") -> produces the `moss` CLI binary AND a
+  #       libmoss.so that has rodio/ALSA, crossterm raw-mode and process-exit
+  #       machinery linked in.
+  #   (2) --no-default-features    -> the [[bin]] target has
+  #       required-features=["cli"] so the CLI is skipped and the `moss`
+  #       binary from step (1) survives, while libmoss.so is OVERWRITTEN with
+  #       the embed-safe variant (no ALSA, nothing that grabs the TTY).
+  #
+  # Reversing these two lines yields a libmoss.so that will be dlopen()ed
+  # into the kitty render process with an audio stack and TTY-grabbing code
+  # attached. Do not reorder.
+  cargo build --frozen --release
+  cargo build --frozen --release --no-default-features
+
+  # Snapshot both artifacts NOW, before anything else can touch the target
+  # dir. This is not belt-and-braces: check() runs `cargo test --release`,
+  # which builds with default features and would rewrite
+  # cargo-target/release/libmoss.so with the (1)-flavoured library after
+  # build() has finished but before package() copies it. Staging here makes
+  # package() independent of check().
+  install -d "${srcdir}/moss-staging"
+  install -m755 "${CARGO_TARGET_DIR}/release/moss"       "${srcdir}/moss-staging/moss"
+  install -m755 "${CARGO_TARGET_DIR}/release/libmoss.so" "${srcdir}/moss-staging/libmoss.so"
+
+  # ---- kitty (patched) -------------------------------------------------
+  cd "${srcdir}/${_kittysrc}"
+  export GOPATH="${srcdir}/gopath"
+  export GOMODCACHE="${srcdir}/gopath/pkg/mod"
+  export GOFLAGS="-trimpath -mod=readonly -modcacherw"
+
+  # `linux-package` lays out  <prefix>/bin/{kitty,kitten}  and
+  # <prefix>/lib/kitty/...  and <prefix>/share/...  (setup.py: package(),
+  # libdir = prefix/<libdir_name>/kitty, launcher_dir = prefix/bin).
+  #
+  # The prefix passed here is NOT baked into the launcher: for any
+  # bundle_type starting with "linux-", build_launcher() compiles
+  #   -DKITTY_LIB_PATH="../lib/kitty"
+  # and the launcher resolves it at runtime as
+  #   realpath("/proc/self/exe") -> dirname -> + "/../lib/kitty"
+  # (kitty/launcher/main.c: `if (KITTY_LIB_PATH[0] == '/') ... else
+  # snprintf(lib, "%s/%s", exe_dir, KITTY_LIB_PATH)`). The tree is therefore
+  # fully relocatable, so we can stage it here and move it into
+  # ${_prefix} in package() without patching anything.
+  #
+  #   --update-check-interval=0  distro packages must not self-update-check
+  #   --shell-integration=enabled  upstream default, stated explicitly because
+  #       it is the reason we drop the kitty-shell-integration dep: kitty must
+  #       auto-inject OUR patched bundled scripts (the 》 interceptors).
+  #       Never change this to 'no-rc'.
+  python setup.py linux-package \
+    --prefix="${srcdir}/linux-package" \
+    --libdir-name=lib \
+    --update-check-interval=0 \
+    --shell-integration=enabled \
+    --ignore-compiler-warnings \
+    --verbose
+}
+
+check() {
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR="${srcdir}/cargo-target"
+  cd "${srcdir}/${_projsrc}/engine"
+
+  # Engine unit + integration tests (~513 of them). MOSS_HOME redirects all
+  # config/cache/state writes into the build dir so the test run cannot touch
+  # the packager's real ~/.config/moss or ~/.cache/moss.
+  export MOSS_HOME="${srcdir}/moss-test-home"
+  install -d "${MOSS_HOME}"
+  cargo test --frozen --release
+
+  # kitty's own ./test.py (and ./test.py --module moss) is deliberately NOT
+  # run here. It needs a real terminal and, for a large part of the suite, a
+  # display/GPU context and a working font stack; under makepkg's
+  # non-interactive, headless, often chroot-ed environment it fails for
+  # reasons that have nothing to do with the package. The moss integration
+  # tests additionally have to be launched via `kitty +launch`, i.e. they
+  # need the built terminal to actually open a window.
+  #
+  # Run them by hand after installing, from a Moss Terminal window:
+  #   cd /path/to/checkout/kitty && ./test.py && ./test.py --module moss
+}
+
+package() {
+  # ---- the kitty payload ------------------------------------------------
+  install -d "${pkgdir}${_prefix}"
+  cp -a "${srcdir}/linux-package/." "${pkgdir}${_prefix}/"
+
+  # Drop the .desktop files setup.py generates inside the payload. They are
+  # inert where they are (nothing scans <prefix>/share/applications), but a
+  # stray kitty.desktop/kitty-open.desktop inside our tree is confusing, and
+  # we install our own entry into the real XDG location below.
+  rm -rf "${pkgdir}${_prefix}/share/applications"
+
+  # Drop kitty's prebuilt HTML documentation: 25 MB (measured) of a ~126 MB
+  # payload, byte-for-byte the same content the stock kitty package already
+  # ships in /usr/share/doc/kitty, and reachable online at docs.kitty.sh.
+  # kitty's man pages are deliberately KEPT (see the note further down).
+  rm -rf "${pkgdir}${_prefix}/share/doc/kitty/html"
+
+  # ---- the engine -------------------------------------------------------
+  # libmoss.so goes NEXT TO THE KITTY PACKAGE, at <prefix>/lib/kitty/, because
+  # that is the one path the in-tree loaders find on their own:
+  #
+  #   kitty-overlay/kitty/moss_integration.py:_candidate_library_paths()
+  #     -> dirname(dirname(<libdir>/kitty/moss_integration.py)) + "/libmoss.so"
+  #     =  ${_prefix}/lib/kitty/libmoss.so
+  #
+  # This matches the verified working install (~/.local/share/moss-terminal/
+  # lib/kitty/libmoss.so). Do NOT move it to ${_prefix}/libmoss.so, which no
+  # loader finds on its own.
+  #
+  # Honest limitation: this fixes the PYTHON side only. moss_hook.c falls back
+  # to the bare soname "libmoss.so", and the library carries no SONAME
+  # (verified: `readelf -d libmoss.so` has no SONAME entry) and is in no ld.so
+  # search path, so the C hook still REQUIRES $MOSS_ENGINE_LIB — and the Python
+  # side does not re-export it. /usr/bin/moss-terminal is therefore the
+  # supported entry point; launching ${_prefix}/bin/kitty directly (a
+  # hand-written .desktop, a compositor exec line, a systemd unit, an
+  # env-sanitising launcher) gives you a degraded terminal. Installing here at
+  # least means the Python half degrades gracefully instead of the engine being
+  # entirely absent, and it removes the split-object hazard below.
+  #
+  # It is intentionally NOT in a linker search path and has no soname consumers
+  # — nothing else should ever link against it.
+  install -Dm755 "${srcdir}/moss-staging/libmoss.so" \
+    "${pkgdir}${_prefix}/lib/kitty/libmoss.so"
+  # The standalone CLI agent.
+  install -Dm755 "${srcdir}/moss-staging/moss" "${pkgdir}/usr/bin/moss"
+
+  # ---- launcher ---------------------------------------------------------
+  # A wrapper rather than a symlink, so a developer can point the installed
+  # terminal at a source-tree build via the :- default without editing files.
+  # MOSS_ENGINE_LIB is NOT optional: it is what the C hook uses (see above).
+  # It MUST name the same file that is installed above — if the two ever
+  # disagree, the C hook and the Python side dlopen two different objects, i.e.
+  # two independent engine instances inside one process.
+  install -d "${pkgdir}/usr/bin"
+  cat > "${pkgdir}/usr/bin/${pkgname}" <<EOF
+#!/bin/sh
+# Moss Terminal launcher (installed by the ${pkgname} package)
+MOSS_PREFIX=${_prefix}
+export MOSS_ENGINE_LIB="\${MOSS_ENGINE_LIB:-\$MOSS_PREFIX/lib/kitty/libmoss.so}"
+exec "\$MOSS_PREFIX/bin/kitty" "\$@"
+EOF
+  chmod 755 "${pkgdir}/usr/bin/${pkgname}"
+  # NOTE: <prefix>/bin/kitten is intentionally left inside ${_prefix} and NOT
+  # exposed as /usr/bin/kitten — that file belongs to the stock kitty package.
+
+  # ---- desktop entry ----------------------------------------------------
+  # Exec/TryExec rewritten from the bare name to the installed absolute path,
+  # and Icon= repointed at the icon we install under our own name below.
+  install -Dm644 "${srcdir}/${_projsrc}/scripts/${pkgname}.desktop" \
+    "${pkgdir}/usr/share/applications/${pkgname}.desktop"
+  sed -i \
+    -e "s|^TryExec=.*|TryExec=/usr/bin/${pkgname}|" \
+    -e "s|^Exec=.*|Exec=/usr/bin/${pkgname}|" \
+    -e "s|^Icon=.*|Icon=${pkgname}|" \
+    "${pkgdir}/usr/share/applications/${pkgname}.desktop"
+
+  # ---- icons ------------------------------------------------------------
+  # The project ships no artwork of its own, so these are kitty's logo files
+  # from the upstream tarball (GPLv3, same licence as the rest of the payload)
+  # installed under OUR filename. Installing them as kitty.png/kitty.svg would
+  # collide file-for-file with the stock kitty package. If/when the project
+  # gets its own logo, drop these two lines in favour of the real assets.
+  install -Dm644 "${srcdir}/${_kittysrc}/logo/kitty.png" \
+    "${pkgdir}/usr/share/icons/hicolor/256x256/apps/${pkgname}.png"
+  install -Dm644 "${srcdir}/${_kittysrc}/logo/kitty.svg" \
+    "${pkgdir}/usr/share/icons/hicolor/scalable/apps/${pkgname}.svg"
+
+  # ---- licences ---------------------------------------------------------
+  # Two, because this is a combined work: kitty (GPLv3) + the engine (MIT).
+  install -Dm644 "${srcdir}/${_kittysrc}/LICENSE" \
+    "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE.kitty-GPL3"
+  install -Dm644 "${srcdir}/${_projsrc}/engine/LICENSE" \
+    "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE.engine-MIT"
+  # Top-level combined-work licence, once upstream adds one.
+  if [ -f "${srcdir}/${_projsrc}/LICENSE" ]; then
+    install -Dm644 "${srcdir}/${_projsrc}/LICENSE" \
+      "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+  fi
+
+  # ---- documentation ----------------------------------------------------
+  install -d "${pkgdir}/usr/share/doc/${pkgname}"
+  local _doc
+  # `if` rather than `[ -f ] && install`: under makepkg's `set -e` an
+  # AND-list that ends up false is a landmine if it ever becomes the last
+  # statement in the function.
+  for _doc in README.md 部署与使用指南.md 项目概要.md 文件清单.md 验收报告.md; do
+    if [ -f "${srcdir}/${_projsrc}/${_doc}" ]; then
+      install -m644 "${srcdir}/${_projsrc}/${_doc}" "${pkgdir}/usr/share/doc/${pkgname}/${_doc}"
+    fi
+  done
+  if [ -f "${srcdir}/${_projsrc}/specs/需求规格.md" ]; then
+    install -Dm644 "${srcdir}/${_projsrc}/specs/需求规格.md" \
+      "${pkgdir}/usr/share/doc/${pkgname}/specs/需求规格.md"
+  fi
+  # kitty's own HTML docs and man pages came along inside ${_prefix}/share/.
+  # The man pages are deliberately left there rather than installed into
+  # /usr/share/man: they are kitty's, they would collide with the kitty
+  # package, and `man kitty` should keep meaning the system kitty. See them
+  # with: MANPATH=${_prefix}/share/man man kitty
+
+  # ---- opt-in sync integration -----------------------------------------
+  # Shipped as inert data, never activated. Installing the pacman hook into
+  # /etc/pacman.d/hooks or enabling the systemd user timer is a decision for
+  # the user (see packaging/README.md); a package must not make it for them.
+  install -d "${pkgdir}/usr/share/${pkgname}/packaging"
+  install -m644 \
+    "${srcdir}/${_projsrc}/packaging/moss-kitty-sync.hook" \
+    "${srcdir}/${_projsrc}/packaging/moss-sync-check.service" \
+    "${srcdir}/${_projsrc}/packaging/moss-sync-check.timer" \
+    "${srcdir}/${_projsrc}/packaging/README.md" \
+    "${pkgdir}/usr/share/${pkgname}/packaging/"
+}

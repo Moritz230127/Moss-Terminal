@@ -1,0 +1,98 @@
+name: Feature request
+description: Suggest a capability or change for Moss Terminal.
+title: "[feature] "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before you write: Moss Terminal deliberately keeps its kitty patch series small
+        (currently 10 patches, ~146 lines) because every line has to be rebased onto each
+        new kitty release. Proposals that live in `engine/` or in
+        `kitty-overlay/` are far easier to accept than proposals that need new patches
+        against upstream kitty files.
+
+        Requests for kitty itself (fonts, ligatures, tabs, remote control, graphics
+        protocol, …) belong at
+        [kovidgoyal/kitty](https://github.com/kovidgoyal/kitty/issues).
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: This is about Moss Terminal's AI integration, not about kitty's terminal features.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do that you cannot do today? Describe the situation, not the solution.
+      placeholder: |
+        When I ask a follow-up question after a long build, ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should happen instead? Be concrete — a config key, a command, a behaviour change.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: layer
+    attributes:
+      label: Which layer would this touch?
+      description: A guess is fine; it helps triage. See the architecture diagram in README.en.md.
+      multiple: true
+      options:
+        - "Layer 3 — Rust engine (engine/)"
+        - "Layer 2 — kitty Python integration (kitty-overlay/kitty/moss_integration.py)"
+        - "Layer 1 — kitty C core (kitty-patches/, moss_hook.c)"
+        - "Shell integration (the 》 trigger for zsh/fish/bash)"
+        - "Installer / packaging / scripts"
+        - "Documentation"
+        - "Not sure"
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Including "do nothing" and why that is not good enough.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: breaking
+    attributes:
+      label: Would this change existing behaviour?
+      options:
+        - "No — purely additive, off by default"
+        - "Yes — it changes a default"
+        - "Yes — it removes or replaces something"
+        - "Not sure"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Are you offering to implement it?
+      options:
+        - label: I am willing to open a pull request for this (see CONTRIBUTING.md).
+          required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Prior art in other tools, links, mockups, sample output.
+    validations:
+      required: false

@@ -1,0 +1,159 @@
+## moss-terminal.install — pacman lifecycle messages.
+##
+## Deliberately inert: this file only prints. It runs as root, so it must
+## never touch a user's $HOME, never call systemctl/useradd/pacman, and never
+## reach the network. Everything below is something the *user* runs later,
+## as themselves.
+
+_moss_notes() {
+	cat <<'EOF'
+
+Moss Terminal is installed.
+
+  Launch it        moss-terminal          (or the "Moss Terminal" desktop entry)
+  Standalone CLI   moss                   (same engine, plain terminal agent)
+
+--- 1. Configure an AI provider (required before 》 does anything) ----------
+
+  moss config          interactive configuration TUI
+  moss paths           print exactly which files the engine will read/write
+  moss models          list the models available from the active provider
+
+  There is also a guided four-preset wizard (opencode Zen / DeepSeek / OpenAI /
+  custom OpenAI-compatible), but NOTE: this package does not install it. It
+  lives in the project's git checkout only, so you need to clone the repo:
+
+  python3 scripts/moss-setup.py     # from a source checkout; NOT installed
+
+  Configuration is a normal file if you prefer an editor:
+
+  ~/.config/moss/config.jsonc     providers, active_provider, prompt/persona
+  ~/.config/moss/.env             API keys, referenced as "$env:VAR" from
+                                  config.jsonc. Create it mode 0600.
+
+  A running terminal picks up config changes without a restart:
+
+  printf '\033]7717;reload-config\007'
+
+--- 2. PRIVACY NOTICE, read before using a public provider -----------------
+
+  The setup wizard offers "opencode Zen" (https://opencode.ai/zen/v1) as a
+  zero-configuration, no-API-key-needed provider. It is a PUBLIC THIRD-PARTY
+  ENDPOINT operated by someone other than this project.
+
+  Moss Terminal's whole point is that the AI sees your terminal. Every
+  question you ask sends the new terminal output since your last question --
+  the commands you ran and everything they printed -- to the configured
+  provider. In a real shell session that can include hostnames, file paths,
+  usernames, internal URLs, git remotes, error messages containing tokens,
+  and anything a command happened to echo.
+
+  Do not point Moss Terminal at a public endpoint on a machine where that
+  matters. Use your own API key with a provider you have a data agreement
+  with, or a local OpenAI-compatible server. Nothing is sent anywhere until
+  you have configured a provider and typed a 》 question.
+
+--- 3. Your shell matters: bash is degraded --------------------------------
+
+  zsh and fish are recommended. They are supported natively (a zsh
+  accept-line hook and a fish \r binding), and your question text reaches the
+  engine byte for byte.
+
+  Under bash, 》 is intercepted through command_not_found_handle, which only
+  ever sees the question AFTER bash has word-split it. Quotes, globs and
+  runs of whitespace inside your question are eaten before Moss can see
+  them. Simple questions work; anything containing shell metacharacters
+  does not survive. This is a bash limitation, not a bug we can patch out.
+
+  Also note (zsh and bash): if a request produces no output and you do not
+  press Ctrl+C, the shell-side `read -t 300` gives up after 300 seconds and
+  returns your prompt, so a network hang cannot wedge the terminal forever.
+  fish's `read` has no timeout, so under fish use Ctrl+C. Ctrl+C cancels a
+  streaming answer at any time in every shell.
+
+--- 4. Where things live ---------------------------------------------------
+
+  ~/.config/moss/         config.jsonc, .env, prompts/  (or $MOSS_HOME/config)
+  ~/.cache/moss/logs/     engine logs                   (or $MOSS_HOME/cache)
+  /usr/lib/moss-terminal/ the patched kitty payload
+                          (engine: lib/kitty/libmoss.so)
+  /usr/share/doc/moss-terminal/            project documentation
+  /usr/share/moss-terminal/packaging/      opt-in kitty-sync integration
+
+  Setting MOSS_HOME overrides every path above -- useful for sandboxing.
+
+  Debugging a question that never answers:
+  MOSS_LOG=debug, ask again, then read ~/.cache/moss/logs/.
+
+  kitty's own man pages ship inside the payload rather than /usr/share/man,
+  so they cannot collide with the system kitty package:
+  MANPATH=/usr/lib/moss-terminal/share/man man kitty
+
+  `kitten` is likewise inside the payload and is NOT on your PATH (that name
+  belongs to the stock kitty package, and kitty does not add its own bin dir
+  to PATH on Linux). Call it by full path:
+  /usr/lib/moss-terminal/bin/kitten icat image.png
+
+--- 5. Coexistence and updates --------------------------------------------
+
+  This package does not touch the stock kitty package: no shared files, no
+  /usr/bin/kitty, no /usr/bin/kitten. You can have both installed.
+
+  REBUILD AFTER A PYTHON MINOR UPGRADE. The terminal links the libpython it
+  was built against (currently libpython3.14.so.1.0). Arch rebuilds its own
+  kitty on every python bump; an AUR package does not get one automatically.
+  If moss-terminal ever dies with
+    libpython3.X.so.1.0: cannot open shared object file
+  just rebuild/reinstall this package. The `moss` CLI is unaffected.
+
+  /usr/share/moss-terminal/packaging/ holds an OPTIONAL pacman hook and an
+  OPTIONAL systemd *user* timer that notify you when Arch ships a newer
+  kitty than this build was made against. Neither is installed or enabled --
+  read that directory's README.md first. They are aimed at source checkouts;
+  as an AUR user you normally just wait for the next package release.
+
+EOF
+}
+
+post_install() {
+	_moss_notes
+}
+
+post_upgrade() {
+	cat <<'EOF'
+
+Moss Terminal upgraded.
+
+  Existing ~/.config/moss/config.jsonc is untouched by the package.
+  If a running terminal should pick up a config change without restarting:
+  printf '\033]7717;reload-config\007'
+
+  Re-read the full notes any time with:
+  pacman -Qi moss-terminal   (and /usr/share/doc/moss-terminal/)
+
+EOF
+}
+
+post_remove() {
+	cat <<'EOF'
+
+Moss Terminal removed.
+
+  Your personal data was NOT deleted -- pacman does not own it. If you want
+  it gone, remove it yourself:
+
+    rm -rf ~/.config/moss     # config.jsonc, .env (API KEYS), prompts, personas
+    rm -rf ~/.cache/moss      # logs, model cache
+    rm -rf ~/.local/state/moss 2>/dev/null   # session/memory state, if present
+
+  ~/.config/moss/.env contains API keys in plaintext. Delete it if you are
+  decommissioning the machine or handing it on.
+
+  If you enabled the optional integrations by hand, undo them by hand:
+
+    sudo rm -f /etc/pacman.d/hooks/moss-kitty-sync.hook
+    systemctl --user disable --now moss-sync-check.timer
+    rm -f ~/.config/systemd/user/moss-sync-check.{service,timer}
+
+EOF
+}

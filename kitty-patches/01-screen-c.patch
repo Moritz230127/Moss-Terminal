@@ -1,0 +1,34 @@
+--- a/kitty/screen.c
++++ b/kitty/screen.c
+@@ -15,6 +15,7 @@
+ #include "data-types.h"
+ #include "control-codes.h"
+ #include "screen.h"
++#include "moss_hook.h"
+ #include "dnd.h"
+ #include "state.h"
+ #include "iqsort.h"
+@@ -2294,6 +2295,7 @@
+ void
+ screen_linefeed(Screen *self) {
+     bool in_margins = cursor_within_margins(self);
++    moss_on_line_added(self);
+     screen_index(self);
+     if (self->modes.mLNM) screen_carriage_return(self);
+     screen_ensure_bounds(self, false, in_margins);
+@@ -3232,6 +3234,7 @@
+ shell_prompt_marking(Screen *self, char *buf) {
+     if (self->cursor->y < self->lines) {
+         char ch = buf[0];
++        moss_hook_prompt_mark(self, buf);
+         switch (ch) {
+             case 'A': {
+                 PromptKind pk = PROMPT_START;
+@@ -3306,6 +3309,7 @@
+             Py_CLEAR(self->last_reported_cwd);
+             self->last_reported_cwd = x;
+         } else { PyErr_Clear(); }
++        moss_hook_cwd(self, data, sz);
+     }  // we ignore OSC 6 document reporting as we dont have a use for it
+ }
+ 

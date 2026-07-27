@@ -1,0 +1,12 @@
+--- a/kitty/child.py
++++ b/kitty/child.py
+@@ -299,6 +299,9 @@
+         env['TERM'] = opts.term
+         env['COLORTERM'] = 'truecolor'
+         env['KITTY_PID'] = getpid()
++        # Moss Terminal: gates the 》 interception in shell integration so it
++        # never activates under a plain kitty (where nothing would answer).
++        env['MOSS_TERMINAL'] = '1'
+         env['KITTY_PUBLIC_KEY'] = boss.encryption_public_key
+         if self.remote_control_fd > -1:
+             env['KITTY_LISTEN_ON'] = f'fd:{self.remote_control_fd}'

@@ -1,0 +1,19 @@
+--- a/docs/changelog.rst
++++ b/docs/changelog.rst
+@@ -9,6 +9,16 @@
+ Recent major new features
+ ---------------------------
+ 
++Moss Terminal AI integration [0.48, fork]
++~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++
++This fork embeds the Moss AI engine directly in the terminal process. Type
++``》question`` at any shell prompt and the engine answers inline, with full
++awareness of the commands and output on your screen (captured per window via
++OSC 133 semantic zones). No daemon, no sockets; the engine is a Rust cdylib
++loaded lazily, and every hook is a no-op when it is absent. Set
++``MOSS_ENABLED=0`` at build time for a vanilla kitty.
++
+ Vertical tabs [0.48]
+ ~~~~~~~~~~~~~~~~~~~~~~~~~~
+ 

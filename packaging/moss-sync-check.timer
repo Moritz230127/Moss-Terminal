@@ -1,0 +1,16 @@
+# moss-sync-check.timer — OPTIONAL systemd USER unit, NOT installed
+# automatically. See moss-sync-check.service for what it runs and how to
+# install both files; `systemctl --user enable --now moss-sync-check.timer`
+# after copying them into ~/.config/systemd/user/.
+
+[Unit]
+Description=Daily check for kitty updates relevant to Moss Terminal
+
+[Timer]
+OnCalendar=daily
+# Run the missed check on next login/boot if the machine was off when the
+# timer would have fired.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

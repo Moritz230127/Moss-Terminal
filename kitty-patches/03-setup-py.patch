@@ -1,0 +1,12 @@
+--- a/setup.py
++++ b/setup.py
+@@ -634,6 +634,9 @@
+     ans = env.copy()
+     cflags = ans.cflags
+     cflags.append('-pthread')
++    # Moss Terminal integration; export MOSS_ENABLED=0 to build vanilla kitty
++    if os.environ.get('MOSS_ENABLED', '1') != '0':
++        cflags.append('-DMOSS_ENABLED')
+     cppflags = ans.cppflags
+     # We add 4000 to the primary version because vim turns on SGR mouse mode
+     # automatically if this version is high enough

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Moss Terminal
+Comment=AI-native terminal built on kitty, ask with 》 / 基于 kitty 的 AI 原生终端，用 》 提问
+TryExec=moss-terminal
+Exec=moss-terminal
+Icon=kitty
+Categories=System;TerminalEmulator;
+Terminal=false
+StartupNotify=true

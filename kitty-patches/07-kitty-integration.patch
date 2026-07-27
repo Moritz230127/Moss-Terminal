@@ -1,0 +1,37 @@
+--- a/shell-integration/zsh/kitty-integration
++++ b/shell-integration/zsh/kitty-integration
+@@ -485,3 +485,34 @@
+     data="$data,env=$(builtin printf "%s" "$env" | builtin command base64)"
+     _ksi_transmit_data "$data" "clone" "save_history"
+ }
++
++# Moss Terminal: intercept 》-prefixed input and route it to the embedded AI
++# engine instead of the shell. Active only inside Moss Terminal (the
++# MOSS_TERMINAL env var is set by the terminal for its children).
++if [[ -n "$MOSS_TERMINAL" && -o interactive ]]; then
++    _moss_ask() {
++        builtin local b64
++        b64=$(builtin printf '%s' "$1" | builtin command base64 | builtin command tr -d '\n')
++        builtin printf '\e]7717;ask;%s\a' "$b64"
++        # Block (silently, 5 min cap) until the terminal signals the end of
++        # the streamed answer with a newline; Ctrl+C cancels the request.
++        builtin local _moss_done=''
++        if ! IFS= builtin read -rs -t 300 _moss_done; then
++            builtin printf '\e]7717;cancel\a'
++        fi
++    }
++    _moss_accept_line() {
++        if [[ $BUFFER == 》* ]]; then
++            builtin local q=$BUFFER
++            builtin print -s -- "$q" 2>/dev/null
++            builtin zle -I
++            builtin printf '\n'
++            _moss_ask "$q"
++            BUFFER=""
++            builtin zle reset-prompt 2>/dev/null
++            builtin return 0
++        fi
++        builtin zle .accept-line
++    }
++    builtin zle -N accept-line _moss_accept_line
++fi

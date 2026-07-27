@@ -1,0 +1,23 @@
+--- a/kitty/vt-parser.c
++++ b/kitty/vt-parser.c
+@@ -10,6 +10,7 @@
+ 
+ #include "vt-parser.h"
+ #include "screen.h"
++#include "moss_hook.h"
+ #include "control-codes.h"
+ #include "state.h"
+ #include "simd-string.h"
+@@ -588,6 +589,12 @@
+                 shell_prompt_marking(self->screen, (char*)buf + i);
+             }
+             break;
++        case 7717:  // Moss Terminal control sequence (ask/cancel)
++            if (limit > i) {
++                buf[limit] = 0; // safe to do as we have 8 extra bytes after PARSER_BUF_SZ
++                moss_handle_osc(self->screen, (const char*)buf + i);
++            }
++            break;
+         case FILE_TRANSFER_CODE:
+             START_DISPATCH
+             DISPATCH_OSC(file_transmission);

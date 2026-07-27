@@ -1,0 +1,15 @@
+--- a/kitty/boss.py
++++ b/kitty/boss.py
+@@ -1419,6 +1419,12 @@
+             self.config_reload_watcher_process = subprocess.Popen(
+                 [kitten_exe(), '__watch_conf__', str(os.getpid()), str(int(opts.auto_reload_config * 1000))] +
+                 list(opts.all_config_paths), stdin=subprocess.PIPE)
++        try:
++            # Moss Terminal: start the embedded AI engine (no-op if absent)
++            from .moss_integration import boss_started
++            boss_started(self)
++        except Exception:
++            log_error('Failed to start moss integration')
+ 
+     def handle_window_title_bar_mouse(self, os_window_id: int, window_id: int, x: float, y: float, button: int, modifiers: int, action: int) -> None:
+         if tm := self.os_window_map.get(os_window_id):

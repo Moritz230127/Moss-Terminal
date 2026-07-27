@@ -1,0 +1,31 @@
+--- a/kitty/window.py
++++ b/kitty/window.py
+@@ -1825,6 +1825,15 @@
+             self.call_watchers(self.watchers.on_cmd_startstop, {"is_start": True, "time": start_time, 'cmdline': cmdline, 'exit_status': 0})
+         else:
+             self.handle_cmd_end(cmdline)
++
++    def moss_osc(self, payload: str) -> None:
++        # Moss Terminal: OSC 7717 control sequence (see kitty/moss_hook.c)
++        try:
++            from .moss_integration import on_osc
++            on_osc(self, payload)
++        except Exception:
++            import traceback
++            traceback.print_exc()
+     # }}}
+ 
+     # mouse actions {{{
+@@ -1929,6 +1938,12 @@
+ 
+     def destroy(self) -> None:
+         self.call_watchers(self.watchers.on_close, {})
++        try:
++            # Moss Terminal: release the per-window engine session
++            from .moss_integration import on_window_closed
++            on_window_closed(self.id)
++        except Exception:
++            pass
+         self.destroyed = True
+         self.clipboard_request_manager.close()
+         del self.kitten_result_processors

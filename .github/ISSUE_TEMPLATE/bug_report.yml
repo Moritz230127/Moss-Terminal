@@ -1,0 +1,172 @@
+name: Bug report
+description: Something in Moss Terminal is broken or behaves wrongly.
+title: "[bug] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug.
+
+        **Before you post:**
+        - **Security issue?** Do not file it here — follow
+          [SECURITY.md](https://github.com/Moritz230127/Moss-Terminal/blob/main/SECURITY.md).
+        - **Is it actually a kitty bug?** If it reproduces on a stock, unmodified
+          kitty, it belongs at
+          [kovidgoyal/kitty](https://github.com/kovidgoyal/kitty/issues) — not here.
+          The "stock kitty" question below is how we tell.
+        - **Redact secrets.** Terminal output and engine logs routinely contain API
+          keys, tokens and paths. Read what you paste.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: I have removed API keys, tokens and other secrets from everything I pasted below.
+          required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you expect, and what did you get instead?
+      placeholder: |
+        I typed 》why did that fail and ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The smallest sequence that triggers it, starting from a fresh Moss Terminal window.
+      value: |
+        1. Open a new Moss Terminal window
+        2. Run `...`
+        3. Type `》...` and press Enter
+        4. Observe ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: shell
+    attributes:
+      label: Which shell?
+      description: |
+        This matters a lot. zsh and fish intercept `》` **before** the shell parses the
+        line; bash intercepts **after**, via `command_not_found_handle`, so quoting,
+        globs and compound lines behave differently there by design.
+      options:
+        - zsh
+        - fish
+        - bash
+        - other (please say which in "Additional context")
+    validations:
+      required: true
+
+  - type: dropdown
+    id: stock-kitty
+    attributes:
+      label: Does it reproduce on a stock (unmodified) kitty?
+      description: |
+        Try your distribution's `kitty`, or build this tree with `MOSS_ENABLED=0 make debug`,
+        which compiles every Moss hook to a no-op. If it reproduces there, it is an
+        upstream kitty bug and should be reported to kitty.
+      options:
+        - "No — only in Moss Terminal"
+        - "Yes — it also happens on stock kitty (this is probably an upstream bug)"
+        - "Not applicable (the bug is in the engine / `moss` CLI, not the terminal)"
+        - "I could not test this"
+    validations:
+      required: true
+
+  - type: textarea
+    id: paths
+    attributes:
+      label: Output of `moss config paths`
+      description: |
+        Run `moss config paths` (or `moss paths`) and paste the whole thing. It tells us
+        which config, cache, data and state directories the CLI is using. (The embedded
+        engine uses the same XDG paths unless `MOSS_HOME` is set — if you set it, say so.)
+      render: shell
+      placeholder: |
+        $ moss config paths
+        配置目录: /home/you/.config/moss
+        配置文件: /home/you/.config/moss/config.jsonc
+        ...
+        (the output is in Chinese — that is expected, paste it as-is)
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Engine log
+      description: |
+        Logs live in `~/.cache/moss/logs/` (the "log directory" line in the output
+        above; `$MOSS_HOME/cache/logs/` if you set `MOSS_HOME` for the embedded engine).
+
+        Reproduce once with `MOSS_LOG=debug` set, then paste the relevant tail:
+
+        ```
+        MOSS_LOG=debug moss-terminal        # then reproduce, then:
+        tail -n 200 ~/.cache/moss/logs/*
+        ```
+
+        **Read it before pasting** — logs can contain captured terminal content.
+      render: shell
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: Moss Terminal version
+      description: A release tag, or `git rev-parse --short HEAD` for a source build.
+      placeholder: "v0.1.0 (or 1db9353)"
+    validations:
+      required: true
+
+  - type: input
+    id: kitty-version
+    attributes:
+      label: kitty baseline
+      description: "Output of: `python3 -c \"import re,pathlib;print(re.search(r'version.*?(\\d+), (\\d+), (\\d+)', pathlib.Path('kitty/kitty/constants.py').read_text()).groups())\"` — or just the version you patched."
+      placeholder: "0.48.1"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: OS / distribution and kernel
+      placeholder: "Arch Linux, 6.9.3-arch1-1, Wayland (sway)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: How did you install it?
+      options:
+        - "scripts/moss-setup.py"
+        - "From source, run via scripts/moss-start.sh"
+        - "Manual install"
+        - "Release binaries"
+        - "Other"
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: |
+        Anything else — provider in use (not the key!), relevant parts of
+        `~/.config/moss/config.jsonc`, whether `skills.allow_command_execution` is on,
+        screenshots, an `asciinema` recording.
+    validations:
+      required: false

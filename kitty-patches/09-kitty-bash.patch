@@ -1,0 +1,37 @@
+--- a/shell-integration/bash/kitty.bash
++++ b/shell-integration/bash/kitty.bash
+@@ -412,3 +412,34 @@
+       ;;
+ esac
+ 
++
++# Moss Terminal: route 》-prefixed input to the embedded AI engine. bash has
++# no safe way to wrap Enter, so this uses the command-not-found hook (a
++# 》-prefixed line is never a real command). Word splitting applies; for
++# full-fidelity capture use zsh or fish. Active only inside Moss Terminal.
++if [[ -n "$MOSS_TERMINAL" && $- == *i* ]]; then
++    _moss_ask() {
++        builtin local b64
++        b64=$(builtin printf '%s' "$1" | builtin command base64 | builtin command tr -d '\n')
++        builtin printf '\033]7717;ask;%s\007' "$b64"
++        builtin local _moss_done=''
++        if ! IFS= builtin read -rs -t 300 _moss_done; then
++            builtin printf '\033]7717;cancel\007'
++        fi
++    }
++    if builtin declare -f command_not_found_handle >/dev/null 2>&1; then
++        builtin eval "$(builtin declare -f command_not_found_handle | builtin command sed 's/^command_not_found_handle/_moss_prev_cnf_handle/')"
++    fi
++    command_not_found_handle() {
++        if [[ $1 == 》* ]]; then
++            _moss_ask "$*"
++            builtin return 0
++        fi
++        if builtin declare -f _moss_prev_cnf_handle >/dev/null 2>&1; then
++            _moss_prev_cnf_handle "$@"
++            builtin return $?
++        fi
++        builtin printf '%s: command not found\n' "$1" >&2
++        builtin return 127
++    }
++fi

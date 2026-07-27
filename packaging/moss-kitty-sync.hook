@@ -1,0 +1,37 @@
+# moss-kitty-sync.hook — OPTIONAL pacman hook, NOT installed automatically.
+#
+# What it does: whenever pacman upgrades the system `kitty` package, this
+# hook drops a flag file at /var/tmp/moss-kitty-update-pending. Nothing else
+# happens as root. Picking the flag up and actually rebuilding/patching the
+# Moss Terminal tree is done later, as your own user, by either:
+#   - running scripts/moss-sync-kitty.sh --notify-only by hand, or
+#   - the optional systemd user timer in packaging/moss-sync-check.timer
+#     (see packaging/moss-sync-check.service), which polls daily and can
+#     check for this flag file / just re-derive the same information itself
+#     via `pacman -Si kitty`.
+#
+# Pacman hooks run as root during a transaction. Running arbitrary Moss/user
+# code (cargo builds, network downloads, patch application) as root would be
+# unsafe and pointless (it would need to run again as your normal user
+# anyway to reach your $HOME checkout). So the hook does the one thing that
+# is safe to do as root: touch a flag file. Everything else stays in
+# user-space and is opt-in.
+#
+# To install (manual, optional):
+#   sudo install -Dm644 packaging/moss-kitty-sync.hook /etc/pacman.d/hooks/moss-kitty-sync.hook
+# To remove:
+#   sudo rm /etc/pacman.d/hooks/moss-kitty-sync.hook
+
+[Trigger]
+Operation = Upgrade
+Type = Package
+Target = kitty
+
+[Action]
+Description = Flagging that the system kitty package changed (Moss Terminal may need a resync)...
+When = PostTransaction
+Exec = /usr/bin/touch /var/tmp/moss-kitty-update-pending
+# NeedsTargets is intentionally NOT set: this hook doesn't care which
+# specific kitty version(s) were involved, only that an upgrade happened,
+# so it has no use for the list of matched target names pacman would
+# otherwise pipe to Exec's stdin.
