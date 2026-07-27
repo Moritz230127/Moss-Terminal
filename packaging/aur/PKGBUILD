@@ -162,6 +162,11 @@ install="${pkgname}.install"
 source=(
   "${pkgname}-${pkgver}.tar.gz::${url}/releases/download/v${pkgver}/${pkgname}-${pkgver}.tar.gz"
   "https://github.com/kovidgoyal/kitty/releases/download/v${_kittyver}/kitty-${_kittyver}.tar.xz"
+  # Symbols Nerd Font Mono (OFL). kitty's linux-package embeds this font; a
+  # clean chroot has no system fonts, so fc-list discovery WILL fail there —
+  # providing the file in fonts/ short-circuits that (setup.py checks the
+  # tree first).
+  "https://github.com/Moritz230127/Moss-Terminal/releases/download/v0.1.0/SymbolsNerdFontMono-Regular.ttf"
 )
 
 # sha256sums[0] (project tarball): SKIP.
@@ -179,9 +184,11 @@ source=(
 #
 # sha256sums[1] (kitty tarball): real, computed locally from the pinned
 #   kitty-0.48.1.tar.xz release artifact. Do not replace with SKIP.
+noextract=('SymbolsNerdFontMono-Regular.ttf')
 sha256sums=(
-  '42d51d2a11932404aea5fb471f24f17f93b7b2e89c74ca66d15bf287935d7b88'
+  '2725128418bb1d7b2156eee371ba19ca503b82e622ec272cd3764465aac9af0b'
   'aadb428e20ad678c0a7969c0a80c46f391b49addeb7fda57b06a14a4d102fb1d'
+  'f0f624d9b474bea1662cf7e862d44aebe1ae1f6c7f9cb7a0ca5d0e5ac9561c60'
 )
 
 # Where the project tarball unpacks to. make-source-tarball.sh sets
@@ -202,6 +209,10 @@ prepare() {
   #    module). It exits 2 on any conflict, which fails the build loudly
   #    rather than silently producing a kitty without the AI hook.
   "${srcdir}/${_projsrc}/scripts/moss-apply-patches.sh" "${srcdir}/${_kittysrc}"
+  # Bundled font: a clean chroot has no system fonts; setup.py uses the
+  # in-tree copy and never falls back to fc-list discovery.
+  install -Dm644 "${srcdir}/SymbolsNerdFontMono-Regular.ttf" \
+    "${srcdir}/${_kittysrc}/fonts/SymbolsNerdFontMono-Regular.ttf"
 
   # 2. Offline-prep the Rust dependency graph (Arch Rust packaging guideline).
   #    This is the only network access in the build and it is bounded by

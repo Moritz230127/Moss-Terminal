@@ -21,9 +21,12 @@ set -euo pipefail
 
 REPO="Moritz230127/Moss-Terminal"
 VERSION="0.1.0"
-TARBALL_SHA256="42d51d2a11932404aea5fb471f24f17f93b7b2e89c74ca66d15bf287935d7b88"
+TARBALL_SHA256="2725128418bb1d7b2156eee371ba19ca503b82e622ec272cd3764465aac9af0b"
 KITTY_VERSION="0.48.1"
 KITTY_SHA256="aadb428e20ad678c0a7969c0a80c46f391b49addeb7fda57b06a14a4d102fb1d"
+# Symbols Nerd Font Mono (OFL): kitty's build embeds it; fetched explicitly so
+# the build does not depend on the font being installed system-wide.
+FONT_SHA256="f0f624d9b474bea1662cf7e862d44aebe1ae1f6c7f9cb7a0ca5d0e5ac9561c60"
 
 BOLD=$'\033[1m'; RED=$'\033[31m'; GREEN=$'\033[32m'; YELLOW=$'\033[33m'; RESET=$'\033[0m'
 say()  { printf '%s\n' "${BOLD}[moss-install]${RESET} $*"; }
@@ -113,6 +116,12 @@ else
     say "物料化 kitty 源码树（打补丁）/ materialising the patched kitty tree"
     tar xf kitty.tar.xz
     "$SRCDIR/scripts/moss-apply-patches.sh" "$WORK/kitty-${KITTY_VERSION}" >/dev/null
+    say "下载内嵌字体 / fetching the bundled Symbols Nerd Font"
+    curl -fL --proto '=https' -o SymbolsNerdFontMono-Regular.ttf         "https://github.com/${REPO}/releases/download/v${VERSION}/SymbolsNerdFontMono-Regular.ttf"
+    printf '%s  SymbolsNerdFontMono-Regular.ttf
+' "$FONT_SHA256" | sha256sum -c - >/dev/null         || die "字体校验失败 / font checksum mismatch"
+    mkdir -p "$WORK/kitty-${KITTY_VERSION}/fonts"
+    mv SymbolsNerdFontMono-Regular.ttf "$WORK/kitty-${KITTY_VERSION}/fonts/"
     mv "$WORK/kitty-${KITTY_VERSION}" "$SRCDIR/kitty"
     ok "补丁序列应用完成 / patch series applied"
 

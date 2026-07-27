@@ -44,10 +44,13 @@ pkgbase = moss-terminal
 	optdepends = libcanberra: playing "bell" sound on terminal bell
 	optdepends = zsh: full-fidelity 》 input (recommended over bash, see the post-install note)
 	optdepends = fish: full-fidelity 》 input (recommended over bash, see the post-install note)
+	noextract = SymbolsNerdFontMono-Regular.ttf
 	options = !lto
 	source = moss-terminal-0.1.0.tar.gz::https://github.com/Moritz230127/Moss-Terminal/releases/download/v0.1.0/moss-terminal-0.1.0.tar.gz
 	source = https://github.com/kovidgoyal/kitty/releases/download/v0.48.1/kitty-0.48.1.tar.xz
-	sha256sums = 42d51d2a11932404aea5fb471f24f17f93b7b2e89c74ca66d15bf287935d7b88
+	source = https://github.com/Moritz230127/Moss-Terminal/releases/download/v0.1.0/SymbolsNerdFontMono-Regular.ttf
+	sha256sums = 2725128418bb1d7b2156eee371ba19ca503b82e622ec272cd3764465aac9af0b
 	sha256sums = aadb428e20ad678c0a7969c0a80c46f391b49addeb7fda57b06a14a4d102fb1d
+	sha256sums = f0f624d9b474bea1662cf7e862d44aebe1ae1f6c7f9cb7a0ca5d0e5ac9561c60
 
 pkgname = moss-terminal

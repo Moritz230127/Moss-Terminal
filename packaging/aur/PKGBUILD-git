@@ -104,12 +104,19 @@ install="${_pkgname}.install"
 source=(
   "${_pkgname}::git+${url}.git#branch=${_branch}"
   "https://github.com/kovidgoyal/kitty/releases/download/v${_kittyver}/kitty-${_kittyver}.tar.xz"
+  # Symbols Nerd Font Mono (OFL). kitty's linux-package embeds this font; a
+  # clean chroot has no system fonts, so fc-list discovery WILL fail there —
+  # providing the file in fonts/ short-circuits that (setup.py checks the
+  # tree first).
+  "https://github.com/Moritz230127/Moss-Terminal/releases/download/v0.1.0/SymbolsNerdFontMono-Regular.ttf"
 )
 # SKIP on a VCS source is correct and expected (the ref is the identity).
 # The kitty tarball keeps its real digest — never SKIP that one.
+noextract=('SymbolsNerdFontMono-Regular.ttf')
 sha256sums=(
   'SKIP'
   'aadb428e20ad678c0a7969c0a80c46f391b49addeb7fda57b06a14a4d102fb1d'
+  'f0f624d9b474bea1662cf7e862d44aebe1ae1f6c7f9cb7a0ca5d0e5ac9561c60'
 )
 
 _projsrc="${_pkgname}"
@@ -135,6 +142,10 @@ pkgver() {
 
 prepare() {
   "${srcdir}/${_projsrc}/scripts/moss-apply-patches.sh" "${srcdir}/${_kittysrc}"
+  # Bundled font: a clean chroot has no system fonts; setup.py uses the
+  # in-tree copy and never falls back to fc-list discovery.
+  install -Dm644 "${srcdir}/SymbolsNerdFontMono-Regular.ttf" \
+    "${srcdir}/${_kittysrc}/fonts/SymbolsNerdFontMono-Regular.ttf"
 
   export RUSTUP_TOOLCHAIN=stable
   cd "${srcdir}/${_projsrc}/engine"
